@@ -95,6 +95,9 @@ GUIDE = [
         ("steps", ["Open an order in Order explorer (or just name the order in your question).",
                    "Go to the Ask Buddy tab and type your question, then Enter.",
                    "Buddy reads the order and answers, saying which case and tab the answer comes from."]),
+        ("p", "Answers start with the short answer, then the details: bullets for a few facts, a table for lists "
+              "(devices, serial numbers, sub-cases...). Click a table's column title to sort it. 'Copy answer' under "
+              "each answer copies it as clean text: tables paste as columns in Excel and as text in Outlook."),
         ("p", "Buddy only uses what SALTO shows. If a field does not exist in SALTO (for example a serial number), "
               "it says so and offers the closest fields. Answers come from Claude (Anthropic): your question and the "
               "order data it needs are sent there."),
@@ -198,7 +201,9 @@ def show_whats_new(app):
 
     def page_new(d):
         d.title("What's new")
-        for s in ["New: HOTO preparation - the HOTO sheet of a LAN order, filled for you (devices in creation), "
+        for s in ["Ask Buddy answers are clearer: the answer first, then short sections, tables for devices and serial "
+                  "numbers, and where it comes from. 'Copy answer' pastes cleanly into Outlook or Excel.",
+                  "New: HOTO preparation - the HOTO sheet of a LAN order, filled for you (devices in creation), "
                   "ready to save as Excel or paste into your HOTO document.",
                   "FLIP: every part of an intervention is read now (large orders used to miss some serial numbers).",
                   "Much faster: the order appears in about 20 seconds; sub-cases and serial numbers fill in after.",

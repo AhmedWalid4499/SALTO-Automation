@@ -5,6 +5,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from salto import config, keystore
+from ui import rich
 from ui import theme as T
 
 from .base import Feature
@@ -60,6 +61,9 @@ class AskBuddy(Feature):
         self.chat.tag_configure("bot", lmargin1=8, lmargin2=8, rmargin=20, spacing3=6)
         self.chat.tag_configure("status", font=T.F_SMALL, foreground=T.MUTED, lmargin1=8)
         self.chat.tag_configure("error", foreground=T.RED, lmargin1=8, lmargin2=8)
+        self.chat.tag_configure("copy", font=T.F_SMALL, foreground=T.ORANGE, lmargin1=8, spacing1=2, spacing3=8)
+        rich.setup(self.chat)
+        self.answers = 0
 
         self._welcome()
         parent.bind("<Map>", lambda e: self._update_ctx())
@@ -201,10 +205,31 @@ class AskBuddy(Feature):
         if r:
             self.chat.delete(r[0], r[1])
         self.chat.configure(state="disabled")
-        self._put(answer + "\n", tag)
+        if tag == "bot":
+            self._show_answer(answer)
+        else:
+            self._put(answer + "\n", tag)
         self.busy = False
         self.send_btn.configure(state="normal")
         self._update_ctx()
+
+    def _show_answer(self, answer):
+        """Formatted answer (headings, bullets, bold, tables) and a Copy link under it."""
+        self.answers += 1
+        link = f"copy{self.answers}"
+        self.chat.configure(state="normal")
+        rich.render(self.chat, answer)
+        self.chat.insert("end", "Copy answer\n", ("copy", link))
+        self.chat.tag_bind(link, "<Button-1>", lambda e, t=answer: self._copy(t))
+        self.chat.tag_bind(link, "<Enter>", lambda e: self.chat.configure(cursor="hand2"))
+        self.chat.tag_bind(link, "<Leave>", lambda e: self.chat.configure(cursor="arrow"))
+        self.chat.see("end")
+        self.chat.configure(state="disabled")
+
+    def _copy(self, answer):
+        self.chat.clipboard_clear()
+        self.chat.clipboard_append(rich.plain(answer))
+        self.app.log("Answer copied.")
 
 
 def _friendly(exc):

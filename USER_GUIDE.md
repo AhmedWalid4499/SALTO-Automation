@@ -79,6 +79,8 @@ Ask questions about an order in your own words, for example 'What is the site ad
 2. Go to the Ask Buddy tab and type your question, then Enter.
 3. Buddy reads the order and answers, saying which case and tab the answer comes from.
 
+Answers start with the short answer, then the details: bullets for a few facts, a table for lists (devices, serial numbers, sub-cases...). Click a table's column title to sort it. 'Copy answer' under each answer copies it as clean text: tables paste as columns in Excel and as text in Outlook.
+
 Buddy only uses what SALTO shows. If a field does not exist in SALTO (for example a serial number), it says so and offers the closest fields. Answers come from Claude (Anthropic): your question and the order data it needs are sent there.
 
 ### The team key (nothing to do)

@@ -30,8 +30,23 @@ name and model. Accessories (power supplies, SFPs) have their own serials in the
 - Where the data comes from matters: say which case and tab you took it from, e.g. "Site tab of MLAN-215851".
 - Device lists: the TS tab has, per product node, the devices in scope of work and all devices on the site; \
 "in creation / added" means Cycle = Creation, "ceased / removed" means Cycle = Cessation.
-- Answer in the user's language. Be short. Plain text only (no Markdown headings or bold); for lists, one item per \
-line starting with "- ", fields separated by " | "."""
+- Answer in the user's language.
+
+How to lay out the answer (the chat shows a small Markdown subset; people paste these answers into emails and \
+reports, so they must be clean and easy to scan):
+- First line: the direct answer in one sentence, with the key value(s) in **bold**. No preamble ("Sure", \
+"Let me check", "Based on the data"), no closing offers or questions unless something is truly ambiguous.
+- Then only the details that help. Use "### " headings only when the answer has two or more distinct groups \
+(e.g. "### Site" and "### Local contact"); keep headings to 1-3 words.
+- A few facts about one thing: one bullet each, written "- **Label:** value".
+- Several items that share 3 or more fields (devices, serial numbers, sub-cases, people, attachments): a Markdown \
+table with a header row and one row per item, ordered sensibly (e.g. by device name). List every item, never "...". \
+Keep columns to what was asked plus the identifying ones (device name, OBS name); at most 7 columns.
+- Missing or uncertain values: write "not in SALTO" or "not found in FLIP" in the cell, never leave it blank or guess. \
+If something needs the user's attention (e.g. FLIP lists several serial numbers for one device), say so in one \
+bullet after the table.
+- Last line, on its own: "Source: <case> > <tab>" (e.g. "Source: MLAN-215851 > Site tab; EQP-198834 > FLIP").
+- Use nothing else: no italics, links, code blocks, emojis, nested lists or horizontal rules. Be concise."""
 
 TOOLS = [
     {
