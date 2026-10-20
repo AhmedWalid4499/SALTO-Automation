@@ -285,7 +285,8 @@ class OrderExplorer(Feature):
         self.stepper.set(rep.stages)
         atts = self._attachments()
         self.cards["Status"].set(rep.status or ("Not found" if not rep.stc_id else ""), None if rep.stc_id else "red")
-        self.cards["Current stage"].set(rep.current_stage, "blue" if rep.current_stage else None)
+        self.cards["Current stage"].set(rep.current_stage, "green" if rep.current_stage == "Completed"
+                                        else "blue" if rep.current_stage else None)
         self.cards["EQPs"].set(str(len(rep.eqps)))
         self.cards["Scope devices"].set(str(len(case.scope_devices)) if case else "—")
         self.cards["Sub-cases"].set(str(len(case.subcases)) if case else "—")

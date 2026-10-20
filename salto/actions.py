@@ -224,7 +224,12 @@ def order_lookup(b: SaltoBrowser, order_ref: str, base_dir: str = "", full: bool
     open_case(b, rep.stc_id)
     rep.stages = read_stages(b)
     cur = [s.name for s in rep.stages if s.state == "current"]
-    rep.current_stage = cur[0] if cur else ""
+    if cur:
+        rep.current_stage = cur[0]
+    elif rep.stages and all(s.state == "completed" for s in rep.stages):
+        rep.current_stage = "Completed"  # every stage green, End included: the case is closed
+    else:
+        rep.current_stage = ""
     rep.status = read_status(b)
     rep.eqps = read_eqps(b)
     if full:
