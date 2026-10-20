@@ -155,7 +155,12 @@ def fetch_parts(b, url, save_dir="", label="", log=print, timeout=90):
             raise RuntimeError("FLIP menu has no 'Open Part Request'")
         d.execute_script("arguments[0].click();", item[0])
         parts = _collect(d, timeout=40)
-        export = _export(b, save_dir, label) if save_dir else ""
+        export = ""
+        if save_dir:
+            try:  # the Excel copy is a bonus: never lose the serial numbers over it
+                export = _export(b, save_dir, label)
+            except (OSError, WebDriverException) as exc:
+                log(f"FLIP export not saved: {str(exc).splitlines()[0][:120]}")
         return parts, export
     finally:
         with suppress(WebDriverException):
@@ -217,7 +222,9 @@ def match(devices, parts):
     rows = [part_row(p) for p in parts]
     out = []
     for dev in devices:
-        mine = [r for r in rows if norm(r["Device"]) == norm(dev["Device"])]
+        # the device's own part request (from the rocket) is exact; FLIP's router name can be wrong
+        mine = [r for r in rows if dev.get("Part request") and norm(r["Request"]) == norm(dev["Part request"])] or \
+               [r for r in rows if norm(r["Device"]) == norm(dev["Device"])]
         main = [r for r in mine if _model_matches(r["Part number"], dev["Model"])] or \
                [r for r in mine if r["Revision"].upper().endswith("-RF")]
         hit = main[0] if main else {}
@@ -252,7 +259,7 @@ def read_eqp(b, eqp_id, folder="", log=print):
             parts += got
             if export:
                 result["exports"].append(export)
-        except (WebDriverException, RuntimeError) as exc:
+        except (WebDriverException, RuntimeError, OSError) as exc:
             result["errors"].append(f"{eqp_id} / FLIP {dev['Intervention']}: {str(exc).splitlines()[0][:120]}")
     from .case import enter_case
     with suppress(WebDriverException):

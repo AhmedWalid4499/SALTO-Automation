@@ -581,7 +581,7 @@ def read_case(b: SaltoBrowser, case_id: str, opts: Options = None, log=print, re
         try:
             data.flip = flip.read_eqp(b, case_id, opts.folder, log)
             data.errors += data.flip.get("errors", [])
-        except WebDriverException as exc:
+        except Exception as exc:  # FLIP trouble never stops the rest of the order
             data.errors.append(f"{case_id} / FLIP: {str(exc).splitlines()[0][:120]}")
             with suppress(WebDriverException):
                 enter_case(b, case_id, timeout=15)
@@ -612,7 +612,7 @@ def read_subcases(b, data, opts, log=print, read_stages=None, on_each=None):
             open_subcase(b, case_id, sid)
             sub = read_case(b, sid, opts, log, read_stages, depth=1)
             data.subcases.append(sub)
-        except WebDriverException as exc:
+        except Exception as exc:  # one bad sub-case never stops the others
             data.errors.append(f"{sid}: {str(exc).splitlines()[0][:120]}")
             log(f"  could not open {sid}")
         finally:

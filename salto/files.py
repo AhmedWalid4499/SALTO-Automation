@@ -66,7 +66,13 @@ def wait_new_download(before, timeout=25):
 def replace_into(src, folder, name):
     """Move src to folder/name, replacing an older copy (same attachment downloaded again)."""
     dest = os.path.join(folder, name)
-    os.replace(src, dest)
+    for _ in range(20):  # Firefox can keep a finished download open for a moment
+        try:
+            os.replace(src, dest)
+            return dest
+        except PermissionError:
+            time.sleep(0.5)
+    shutil.copyfile(src, dest)  # still locked: keep a copy, leave the original behind
     return dest
 
 
