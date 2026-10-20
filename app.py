@@ -16,6 +16,7 @@ from features import FEATURES
 from salto import config, keystore, updater
 from salto.version import APP_NAME, __version__
 from salto.worker import BrowserWorker
+from ui import guide
 from ui import theme as T
 from ui.widgets import Pill
 
@@ -45,7 +46,7 @@ class App:
         root.minsize(1040, 660)
         ico = os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))), "assets", "app.ico")
         if os.path.exists(ico):
-            root.iconbitmap(ico)
+            root.iconbitmap(default=ico)  # default=: every dialog gets the SALTO Buddy icon too
         T.setup(root)
         root.report_callback_exception = self._report
 
@@ -74,6 +75,13 @@ class App:
         if self.cfg.get("check_updates_on_start", True):
             root.after(1500, lambda: self.check_updates(silent=True))
         root.after(3000, self._find_team_key)
+        if self.cfg.get("seen_version") != __version__:  # first start after install / update: walkthrough
+            root.after(1200, self._whats_new)
+
+    def _whats_new(self):
+        self.cfg["seen_version"] = __version__
+        config.save(self.cfg)
+        guide.show_whats_new(self)
 
     def _find_team_key(self):
         """If there is no usable key yet, look for the team key in this PC's synced SharePoint/OneDrive folders."""
@@ -107,6 +115,8 @@ class App:
                                      command=lambda: self.prompt_update() if self._update else self.check_updates(False))
         self.update_btn.pack(side="right", padx=(6, 16))
         ttk.Button(h, text="Settings", style="Header.TButton", command=self.show_settings).pack(side="right")
+        ttk.Button(h, text="Guide", style="Header.TButton", command=lambda: guide.show_guide(self.root)).pack(
+            side="right", padx=6)
         self.pill = Pill(h)
         self.pill.pack(side="right", padx=12)
 

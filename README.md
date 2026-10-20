@@ -8,6 +8,8 @@ Download `SALTO-Buddy-Setup-<version>.exe` from the
 [latest release](https://github.com/AhmedWalid4499/SALTO-Automation/releases/latest) and run it
 (no admin rights needed). It installs to `%LOCALAPPDATA%\Programs\SALTO Buddy` and adds Start Menu and desktop shortcuts.
 
+**New here? Read the [user guide](USER_GUIDE.md).** The same guide is in the app: the **Guide** button in the header.
+
 ## Use
 
 1. In **Order explorer**, type a GOLD order number and press **Enter** (or **Open order**).

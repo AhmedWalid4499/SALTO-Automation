@@ -104,6 +104,10 @@ class DetailView(ttk.Frame):
         t.tag_configure("value", font=T.F_BODY, foreground=T.INK)
         t.tag_configure("empty", font=T.F_BODY, foreground=T.SUBTLE)
         t.tag_configure("note", font=T.F_SMALL, foreground=T.MUTED, spacing1=4)
+        t.tag_configure("para", font=T.F_BODY, foreground=T.INK, spacing1=4, spacing3=6)
+        t.tag_configure("bullet", font=T.F_BODY, foreground=T.INK, lmargin1=6, lmargin2=22, spacing1=2)
+        t.tag_configure("stepnum", font=T.F_BOLD, foreground=T.ORANGE)
+        t.tag_configure("step", tabs=(28,), lmargin1=6, lmargin2=28, spacing1=3)
         t.tag_configure("link", font=T.F_BODY, foreground=T.ORANGE, underline=True)
         t.tag_bind("link", "<Enter>", lambda e: t.configure(cursor="hand2"))
         t.tag_bind("link", "<Leave>", lambda e: t.configure(cursor="arrow"))
@@ -141,6 +145,18 @@ class DetailView(ttk.Frame):
 
     def note(self, text):
         self._put(text + "\n", "note")
+
+    def note_body(self, text):
+        """A normal paragraph."""
+        self._put(text + "\n", "para")
+
+    def bullet(self, text):
+        self._put("•  " + text + "\n", "bullet")
+
+    def step(self, n, text):
+        """Numbered step: orange number, text wrapping under itself."""
+        self._put(f"{n}\t", "stepnum", "step")
+        self._put(text + "\n", "para", "step")
 
     def link(self, text, path):
         tag = f"l{self._links}"
