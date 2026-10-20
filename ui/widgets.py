@@ -180,9 +180,9 @@ class StatusCard(tk.Frame):
     def __init__(self, parent, caption, value="—"):
         super().__init__(parent, bg=T.STATUS_CARD, highlightthickness=1, highlightbackground=T.LINE)
         self.cap = tk.Label(self, text=caption.upper(), bg=T.STATUS_CARD, fg=T.MUTED, font=T.F_CAPS, anchor="w")
-        self.cap.pack(fill="x", padx=10, pady=(7, 0))
+        self.cap.pack(fill="x", padx=10, pady=(5, 0))
         self.val = tk.Label(self, text=value, bg=T.STATUS_CARD, fg=T.INK, font=T.F_BIG, anchor="w")
-        self.val.pack(fill="x", padx=10, pady=(0, 7))
+        self.val.pack(fill="x", padx=10, pady=(0, 5))
         self.bind("<Configure>", lambda e: self._fit())
 
     def set(self, value, rag=None):
@@ -198,7 +198,7 @@ class StatusCard(tk.Frame):
         if room <= 0:
             return
         text = self.val.cget("text")
-        for size in (16, 14, 12, 11, 10, 9):
+        for size in (15, 13, 12, 11, 10, 9):
             f = tkfont.Font(family=T.FONT, size=size, weight="bold")
             if f.measure(text) <= room:
                 break
@@ -220,6 +220,33 @@ class Stepper(tk.Frame):
                      font=T.F_SMALL_BOLD if s.state == "current" else T.F_SMALL).pack(side="left", padx=(0 if i == 0 else 4, 0))
             if i < len(stages) - 1:
                 tk.Label(self, text="›", bg=T.CARD, fg=T.SUBTLE, font=T.F_BODY).pack(side="left", padx=(4, 0))
+
+
+class Segmented(tk.Frame):
+    """Buttons side by side; the selected one is orange (a 2-6 way choice, e.g. tabs of a sub-case)."""
+
+    def __init__(self, parent, options, command, value=None):
+        super().__init__(parent, bg=T.CARD)
+        self.command, self.btns = command, {}
+        for i, opt in enumerate(options):
+            b = tk.Label(self, text=opt, font=T.F_SMALL_BOLD, padx=12, pady=5, cursor="hand2",
+                         bg=T.BUTTON, fg=T.INK, highlightthickness=1, highlightbackground=T.BUTTON_BORDER)
+            b.grid(row=i // 8, column=i % 8, padx=(0, 4), pady=(0, 4), sticky="w")
+            b.bind("<Button-1>", lambda e, o=opt: self.select(o))
+            b.bind("<Enter>", lambda e, b=b: b.cget("bg") != T.ORANGE and b.configure(bg=T.ORANGE_SOFT))
+            b.bind("<Leave>", lambda e, b=b: b.cget("bg") != T.ORANGE and b.configure(bg=T.BUTTON))
+            self.btns[opt] = b
+        if options:
+            self.select(value or options[0], fire=False)
+
+    def select(self, opt, fire=True):
+        for o, b in self.btns.items():
+            on = o == opt
+            b.configure(bg=T.ORANGE if on else T.BUTTON, fg="white" if on else T.INK,
+                        highlightbackground=T.ORANGE if on else T.BUTTON_BORDER)
+        self.value = opt
+        if fire:
+            self.command(opt)
 
 
 class ThinProgress(tk.Frame):

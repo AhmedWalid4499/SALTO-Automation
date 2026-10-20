@@ -55,7 +55,8 @@ class App:
         self.tabs = ttk.Notebook(root)
         self.tabs.pack(fill="both", expand=True, padx=16, pady=(4, 0))
 
-        self.worker = BrowserWorker(log=self.log, on_state=lambda s: self.ui(lambda: self._set_state(s)))
+        self.worker = BrowserWorker(log=self.log, on_state=lambda s: self.ui(lambda: self._set_state(s)),
+                                    visible=self.cfg.get("show_browser", False))
         self.features = []
         for cls in FEATURES:
             page = ttk.Frame(self.tabs, style="Card.TFrame", padding=(16, 12))
@@ -176,11 +177,12 @@ class App:
                                                     os.startfile(folder.get()))).grid(row=2, column=2)
         ttk.Label(f, text="Defaults", style="Section.TLabel").grid(row=3, column=0, columnspan=3, sticky="w", pady=(16, 4))
         opts = {}
-        for i, (k, text) in enumerate([("subcases", "Open every sub-case (EQP, CONF, SG, INV...)"),
-                                       ("downloads", "Download all attachments"),
+        for i, (k, text) in enumerate([("show_browser", "Show the Firefox window (normally it works hidden)"),
+                                       ("subcases", "Open every sub-case (EQP, CONF, SG, INV...)"),
+                                       ("downloads", "Download all attachments automatically while reading"),
                                        ("tab_screenshots", "Screenshot every tab while reading"),
                                        ("check_updates_on_start", "Check for updates when SALTO Buddy starts")]):
-            opts[k] = tk.BooleanVar(value=self.cfg.get(k, True))
+            opts[k] = tk.BooleanVar(value=self.cfg.get(k, config.DEFAULTS.get(k, True)))
             ttk.Checkbutton(f, text=text, variable=opts[k]).grid(row=4 + i, column=0, columnspan=3, sticky="w", pady=2)
         f.columnconfigure(0, weight=1)
         foot = ttk.Frame(f, style="Card.TFrame")
@@ -219,7 +221,7 @@ class App:
             except Exception as exc:
                 self.log(f"Update check failed: {exc}", quiet=silent)
                 if not silent:
-                    self.ui(lambda: messagebox.showwarning(APP_NAME, f"Could not reach GitHub to check for updates.\n\n{exc}"))
+                    self.ui(lambda e=exc: messagebox.showwarning(APP_NAME, f"Could not reach GitHub to check for updates.\n\n{e}"))
                 return
             self.ui(lambda: self._on_update(info, silent))
         threading.Thread(target=work, daemon=True).start()
@@ -276,7 +278,7 @@ class App:
                 try:
                     path = updater.download(info, progress)
                 except Exception as exc:
-                    self.ui(lambda: (messagebox.showerror(APP_NAME, f"Download failed: {exc}", parent=w),
+                    self.ui(lambda e=exc: (messagebox.showerror(APP_NAME, f"Download failed: {e}", parent=w),
                                      dl.configure(state="normal", text="Download and install")))
                     return
                 self.ui(lambda: self._install(path))

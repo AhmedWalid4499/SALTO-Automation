@@ -1,4 +1,5 @@
 """Screenshots of SALTO: the whole Firefox view, or one element the user clicks on."""
+import os
 import time
 from contextlib import suppress
 
@@ -65,11 +66,73 @@ def current_label(b):
     return label
 
 
-def screenshot_screen(b, folder):
-    """Save what Firefox shows now as <Tab>_<n>.png in folder."""
-    path = files.numbered(folder, current_label(b))
-    b.driver.switch_to.default_content()
-    b.driver.save_screenshot(path)
+def _content_frame(b):
+    """Switch into the frame showing the open case/page (the one with a visible tab panel or the biggest)."""
+    d = b.driver
+    for i, _ in enumerate(b.frames()):
+        if i == 0:
+            continue  # the portal itself also has tab panels: the content lives in an iframe
+        with suppress(WebDriverException):
+            if any(p.is_displayed() for p in d.find_elements(By.XPATH, "//*[@role='tabpanel']")):
+                return True
+    d.switch_to.default_content()
+    return False
+
+
+def _trim_bottom(path):
+    """Cut the empty white area below the content."""
+    from PIL import Image, ImageChops
+    img = Image.open(path).convert("RGB")
+    bg = Image.new("RGB", img.size, (255, 255, 255))
+    box = ImageChops.difference(img, bg).getbbox()
+    if box and box[3] < img.height - 40:
+        img.crop((0, 0, img.width, min(img.height, box[3] + 30))).save(path)
+
+
+def screenshot_screen(b, folder, label=None):
+    """Save the WHOLE open SALTO page (not just the visible part) as <Case>_<Tab>_<n>.png."""
+    from PIL import Image
+    d = b.driver
+    path = files.numbered(folder, label or current_label(b))
+    if not _content_frame(b):
+        d.save_screenshot(path)
+        return path
+    full, view = d.execute_script("return [document.documentElement.scrollHeight, document.documentElement.clientHeight]")
+    size = d.get_window_size()
+    try:
+        if full > view:  # make the window tall enough for the whole page, then capture it in one go
+            d.switch_to.default_content()
+            d.set_window_size(size["width"], size["height"] + (full - view) + 40)
+            time.sleep(1.2)
+            _content_frame(b)
+            full, view = d.execute_script(
+                "return [document.documentElement.scrollHeight, document.documentElement.clientHeight]")
+        if full <= view + 5:
+            d.find_element(By.TAG_NAME, "html").screenshot(path)
+        else:  # window could not grow (visible Firefox is limited to the screen): scroll and stitch
+            parts, y = [], 0
+            while y < full:
+                d.execute_script("window.scrollTo(0, arguments[0])", y)
+                time.sleep(0.4)
+                tmp = path + f".{len(parts)}.png"
+                d.find_element(By.TAG_NAME, "html").screenshot(tmp)
+                real_y = d.execute_script("return window.scrollY")
+                parts.append((real_y, tmp))
+                y += view
+            d.execute_script("window.scrollTo(0, 0)")
+            first = Image.open(parts[0][1])
+            sheet = Image.new("RGB", (first.width, full), "white")
+            for py, tmp in parts:
+                sheet.paste(Image.open(tmp), (0, py))
+            sheet.save(path)
+            for _, tmp in parts:
+                with suppress(OSError):
+                    os.remove(tmp)
+    finally:
+        d.switch_to.default_content()
+        with suppress(WebDriverException):
+            d.set_window_size(size["width"], size["height"])
+    _trim_bottom(path)
     return path
 
 

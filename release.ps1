@@ -1,13 +1,15 @@
 # Publishes a new SALTO Buddy version on GitHub.
 #
 #   1. Bump __version__ in salto\version.py (e.g. 1.2.0 -> 1.3.0)
-#   2. .\release.ps1 -Notes "What changed"
+#   2. .\release.ps1 -Notes "What changed"      (or -NotesFile notes.md for longer notes)
 #
 # It builds the installer, commits + pushes the code, tags vX.Y.Z and creates a
 # GitHub release with the installer attached. Every installed SALTO Buddy sees
 # the new release the next time it starts and offers "Update available".
 # Needs the GitHub CLI signed in once:  gh auth login
-param([Parameter(Mandatory = $true)][string]$Notes)
+param([string]$Notes = "", [string]$NotesFile = "")
+if ($NotesFile) { $Notes = Get-Content $NotesFile -Raw -Encoding utf8 }
+if (-not $Notes) { throw "Give -Notes ""What changed"" or -NotesFile <file>" }
 $ErrorActionPreference = "Continue"
 Set-Location $PSScriptRoot
 
@@ -24,11 +26,12 @@ $setup = Join-Path $PSScriptRoot "releases\SALTO-Buddy-Setup-$version.exe"
 if (-not (Test-Path $setup)) { throw "Installer not found: $setup" }
 
 git add -A
-git commit -m "Release $tag" -m $Notes
+git diff --cached --quiet
+if ($LASTEXITCODE -ne 0) { git commit -m "Release $tag" -m $Notes }   # skip if already committed
 git tag $tag
 git push origin HEAD --tags
 if ($LASTEXITCODE -ne 0) { throw "git push failed" }
 
-gh release create $tag $setup --title "SALTO Buddy $version" --notes $Notes
+gh release create $tag $setup --title "SALTO Buddy $version" --notes $Notes --latest
 if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
 Write-Host "Released $tag" -ForegroundColor Green

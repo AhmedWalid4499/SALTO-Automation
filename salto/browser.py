@@ -40,14 +40,22 @@ class LoginTimeout(RuntimeError):
 
 
 class SaltoBrowser:
-    def __init__(self, log=print, on_state=None):
+    def __init__(self, log=print, on_state=None, visible=False):
         self.log = log
         self.driver = None
         # on_state(str) is told "starting", "signing-in", "connected" or "offline"
         self.on_state = on_state or (lambda _s: None)
+        self.visible = visible       # user setting: show the Firefox window
+        self.headless = False        # how the running Firefox was started
+
+    def set_visible(self, visible):
+        """Takes effect the next time Firefox starts (a running Firefox cannot be hidden/shown)."""
+        self.visible = visible
+        if self.driver and self.headless == visible:
+            self.quit()
 
     # ------------------------------------------------------------------ lifecycle
-    def start(self):
+    def start(self, force_visible=False):
         if self.is_alive():
             return
         os.makedirs(PROFILE_DIR, exist_ok=True)
@@ -56,6 +64,10 @@ class SaltoBrowser:
             opts.binary_location = FIREFOX_BIN
         opts.add_argument("-profile")
         opts.add_argument(PROFILE_DIR)
+        self.headless = not (self.visible or force_visible)
+        if self.headless:  # runs in the background; a full-HD size so SALTO lays out like on a desktop
+            for a in ("-headless", "--width=1920", "--height=1080"):
+                opts.add_argument(a)
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
         for k, v in {"browser.download.folderList": 2, "browser.download.dir": DOWNLOAD_DIR,
                      "browser.download.useDownloadDir": True, "browser.download.alwaysOpenPanel": False,
@@ -71,7 +83,10 @@ class SaltoBrowser:
         service = Service(executable_path=bundled) if os.path.exists(bundled) else Service()
         service.creation_flags = 0x08000000  # CREATE_NO_WINDOW: no console flash
         self.driver = webdriver.Firefox(options=opts, service=service)
-        self.driver.maximize_window()
+        if self.headless:
+            self.driver.set_window_size(1920, 1080)
+        else:
+            self.driver.maximize_window()
 
     def is_alive(self):
         if not self.driver:
@@ -109,7 +124,9 @@ class SaltoBrowser:
         self._open_salto(timeout)
         deadline = time.time() + timeout
         asked = False
+        stuck_since = None
         while time.time() < deadline:
+            d = self.driver
             d.switch_to.default_content()
             if self._portal_ready():
                 self.log("Logged in to SALTO.")
@@ -124,9 +141,20 @@ class SaltoBrowser:
             if not self._on_salto() and self._choose_professional_account():
                 time.sleep(3)
                 continue
-            if not asked and not self._on_salto():
-                self.log("Please complete the sign-in in the Firefox window (waiting)...")
-                asked = True
+            if not self._on_salto():
+                stuck_since = stuck_since or time.time()
+                if self.headless and time.time() - stuck_since > 20:
+                    # the sign-in wants the user (password / MFA): bring Firefox up so they can finish it
+                    self.log("The Orange sign-in needs you: opening the Firefox window...")
+                    self.quit()
+                    self.start(force_visible=True)
+                    self.on_state("signing-in")
+                    self._open_salto(timeout)
+                    stuck_since = None
+                    continue
+                if not asked and not self.headless:
+                    self.log("Please complete the sign-in in the Firefox window (waiting)...")
+                    asked = True
             time.sleep(1.5)
         raise LoginTimeout("Login was not completed in time.")
 

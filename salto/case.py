@@ -250,19 +250,54 @@ return [...panel.querySelectorAll('[base_ref*="pyAttachments("]')].map(td => {
 def read_attachments(b, case_id, opts: Options, log=print):
     panel = open_tab(b, "Attachments")
     rows = b.driver.execute_script(_ATTACH_JS, panel) or []
+    for i, row in enumerate(rows):
+        row["_index"], row["_case"], row["Saved as"] = i, case_id, ""
     if opts.downloads and opts.folder and rows:
-        dest = files.sub(opts.folder, "Downloads", case_id)
-        for i, row in enumerate(rows):
-            log(f"Downloading {case_id} attachment {i + 1}/{len(rows)}: {row['Title'][:50]}")
-            try:
-                row["Saved as"] = _download_one(b, case_id, i, row, dest)
-            except (WebDriverException, OSError) as exc:
-                row["Saved as"] = f"failed: {str(exc).splitlines()[0][:80]}"
-                with suppress(WebDriverException):
-                    _back_to_case(b, case_id)
-    return TabData("Attachments", grids=[Grid("Attachments", ["Title", "Category", "Added by", "Date", "Case", "Saved as"]
-                                              if opts.downloads else ["Title", "Category", "Added by", "Date", "Case"], rows)]
+        _download_rows(b, case_id, rows, opts.folder, log)
+    return TabData("Attachments", grids=[Grid("Attachments", ["Title", "Category", "Added by", "Date", "Case"], rows)]
                    if rows else [], text=panel.text if panel else ""), rows
+
+
+def _download_rows(b, case_id, rows, folder, log):
+    """Download these attachment rows of the case currently open (Attachments tab)."""
+    dest = files.sub(folder, "Downloads", case_id)
+    for n, row in enumerate(rows, 1):
+        log(f"Downloading {case_id} {n}/{len(rows)}: {(row['Title'] or row.get('Category', ''))[:50]}")
+        try:
+            row["Saved as"] = _download_one(b, case_id, row["_index"], row, dest)
+        except (WebDriverException, OSError) as exc:
+            row["Saved as"] = f"failed: {str(exc).splitlines()[0][:80]}"
+            with suppress(WebDriverException):
+                _back_to_case(b, case_id)
+
+
+def download_attachments(b, main_id, rows, folder, log=print):
+    """Download chosen attachment rows (from any case of the order) after the dissect.
+    Opens each case in SALTO again, the main case directly and sub-cases from its Overview tree."""
+    by_case = {}
+    for r in rows:
+        by_case.setdefault(r["_case"], []).append(r)
+    for cid, items in by_case.items():
+        try:
+            if cid == main_id:
+                if not _focus_case_tab(b, main_id):
+                    raise NoSuchElementException(f"{main_id} is not open in SALTO any more: open the order again")
+                enter_case(b, main_id)
+            else:
+                _focus_case_tab(b, main_id)
+                open_subcase(b, main_id, cid)
+            open_tab(b, "Attachments")
+            _download_rows(b, cid, items, folder, log)
+        except WebDriverException as exc:
+            for r in items:
+                r["Saved as"] = r["Saved as"] or f"failed: {str(exc).splitlines()[0][:80]}"
+        finally:
+            if cid != main_id:
+                with suppress(WebDriverException):
+                    close_case_tab(b, cid)
+    with suppress(WebDriverException):
+        _focus_case_tab(b, main_id)
+    return rows
 
 
 def _back_to_case(b, case_id):
@@ -492,9 +527,8 @@ def read_case(b: SaltoBrowser, case_id: str, opts: Options = None, log=print, re
                     open_tab(b, name)
                 data.tabs[name] = td
             if opts.tab_screenshots and opts.folder:
-                shot = files.numbered(files.sub(opts.folder, "Screenshots"), f"{case_id}_{name}")
-                b.driver.switch_to.default_content()
-                b.driver.save_screenshot(shot)
+                from . import capture
+                shot = capture.screenshot_screen(b, files.sub(opts.folder, "Screenshots"), f"{case_id}_{name}")
                 data.screenshots.append(shot)
                 enter_case(b, case_id)
         except (WebDriverException, IndexError) as exc:

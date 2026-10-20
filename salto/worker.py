@@ -11,10 +11,10 @@ from .browser import SaltoBrowser
 
 
 class BrowserWorker:
-    def __init__(self, log, on_state=None):
+    def __init__(self, log, on_state=None, visible=False):
         self._jobs = queue.Queue()
         self.log = log
-        self.browser = SaltoBrowser(log=log, on_state=on_state)
+        self.browser = SaltoBrowser(log=log, on_state=on_state, visible=visible)
         threading.Thread(target=self._loop, daemon=True).start()
 
     def submit(self, fn, on_done=None, on_error=None):
