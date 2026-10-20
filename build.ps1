@@ -25,7 +25,6 @@ $dist = Join-Path $work "dist"
 py -m PyInstaller --noconfirm --clean --windowed --name "SALTO Buddy" `
     --icon "$PSScriptRoot\assets\app.ico" `
     --collect-all selenium `
-    --collect-data customtkinter `
     --add-data "$PSScriptRoot\salto\extract.js;salto" `
     --add-data "$PSScriptRoot\assets\app.ico;assets" `
     --add-binary "$($gecko.FullName);." `

@@ -40,19 +40,30 @@ class OrderReport:
     current_stage: str = ""
     status: str = ""
     eqps: list = field(default_factory=list)
-    screenshot: str = ""
+    folder: str = ""     # <base>/<order> - <STC>
     case: object = None  # case_reader.CaseData when the full read ran
 
 
 # ---------------------------------------------------------------------- search
 def open_stc_search(b: SaltoBrowser):
     b.log("Opening STC Search...")
-    toggle = b.find_visible("//*[@title='Toggle Left Navigation' or @aria-label='Toggle Left Navigation']")
     item_xp = "//*[(@role='menuitem' or self::a or self::span) and normalize-space(.)='STC Search']"
+    toggle_xp = "//*[@title='Toggle Left Navigation' or @aria-label='Toggle Left Navigation']"
     b.driver.switch_to.default_content()
+    # Already open as a SALTO tab: just select it (the menu would ask "reopen and lose changes?")
+    open_tab = [t for t in b.driver.find_elements(By.XPATH, "//li[@role='tab' and starts-with(@aria-label, 'STC Search')]")
+                if t.is_displayed()]
+    if open_tab:
+        open_tab[0].click()
+        b.find_visible("//label[contains(normalize-space(.), 'Commercial Order Ref')]", timeout=30)
+        return
+    # On wide windows SALTO pins the menu open and hides the toggle; on narrow ones it is collapsed
     if not any(e.is_displayed() for e in b.driver.find_elements(By.XPATH, item_xp)):
-        toggle.click()
-        time.sleep(1)
+        for t in b.driver.find_elements(By.XPATH, toggle_xp):
+            if t.is_displayed():
+                t.click()
+                time.sleep(1)
+                break
     b.find_visible(item_xp).click()
     # The search form lives in its own frame
     b.find_visible("//label[contains(normalize-space(.), 'Commercial Order Ref')]", timeout=30)
@@ -194,7 +205,13 @@ def read_eqps(b: SaltoBrowser):
 
 
 # ---------------------------------------------------------------------- flow
-def order_lookup(b: SaltoBrowser, order_ref: str, screenshot_path: str = "", full: bool = True) -> OrderReport:
+def order_lookup(b: SaltoBrowser, order_ref: str, base_dir: str = "", full: bool = True,
+                 opts: "case_reader.Options" = None) -> OrderReport:
+    """Search the order, open its first STC and (full=True) dissect everything.
+
+    Files (downloads, screenshots) go to <base_dir>/<order> - <STC>/.
+    """
+    from . import files
     b.ensure_logged_in()
     rep = OrderReport(order_ref=order_ref)
     rep.rows = search_order(b, order_ref)
@@ -202,18 +219,24 @@ def order_lookup(b: SaltoBrowser, order_ref: str, screenshot_path: str = "", ful
         b.log("No STC found for this order.")
         return rep
     rep.stc_id = rep.rows[0].stc_id
+    if base_dir:
+        rep.folder = files.order_folder(base_dir, order_ref, rep.stc_id)
     open_case(b, rep.stc_id)
     rep.stages = read_stages(b)
     cur = [s.name for s in rep.stages if s.state == "current"]
     rep.current_stage = cur[0] if cur else ""
     rep.status = read_status(b)
     rep.eqps = read_eqps(b)
-    if screenshot_path:
-        rep.screenshot = b.screenshot(screenshot_path)
-        b.frame_with_text(f"({rep.stc_id})", "Overview")  # screenshot leaves the frame
     if full:
-        rep.case = case_reader.read_case(b, rep.stc_id, log=b.log)
+        opts = opts or case_reader.Options()
+        opts.folder = rep.folder
+        rep.case = case_reader.read_case(b, rep.stc_id, opts, log=b.log, read_stages=read_stages)
+        rep.case.stages = rep.stages
         info = dict(f for _, fs in rep.case.tabs.get("Information", case_reader.TabData("")).sections for f in fs)
         rep.status = next((v for k, v in info.items() if k.endswith("Case Status") and v), rep.status)
-    b.log(f"Stage: {rep.current_stage or '?'} | EQPs: {len(rep.eqps)}")
+        for sc in rep.case.subcases:  # EQPs nested deeper in the tree
+            if sc.stc_id.startswith("EQP-") and sc.stc_id not in rep.eqps:
+                rep.eqps.append(sc.stc_id)
+    b.log(f"Done. Stage: {rep.current_stage or '?'} | EQPs: {len(rep.eqps)}"
+          + (f" | sub-cases: {len(rep.case.subcases)}" if rep.case else ""))
     return rep

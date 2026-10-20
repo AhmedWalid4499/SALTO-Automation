@@ -1,53 +1,71 @@
-"""Reusable widgets: styled tables, cards, nested tabs, stage stepper."""
+"""Flat widgets: tables, a wrapping detail view, status cards, stage stepper, status pill."""
+import os
 import tkinter as tk
+from tkinter import font as tkfont
 from tkinter import ttk
-
-import customtkinter as ctk
 
 from . import theme as T
 
 
-# ---------------------------------------------------------------- tables
-def table(parent, headers, rows, height=12, widths=None):
-    """Scrollable, sortable table. rows: dicts keyed by header, or sequences.
-    Ctrl+C / right-click copies rows (tab separated, pastes into Excel)."""
-    frame = ctk.CTkFrame(parent, fg_color=T.CARD, corner_radius=8, border_width=1, border_color=T.BORDER)
-    inner = tk.Frame(frame, bg=T.CARD)
-    inner.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
-    tv = ttk.Treeview(inner, columns=list(range(len(headers))), show="headings", height=height)
-    for i, h in enumerate(headers):
-        tv.heading(i, text=h, anchor=tk.W, command=lambda c=i: _sort(tv, c, False))
-        w = (widths or {}).get(h) or max(90, min(340, 8 * max([len(str(h)) + 2] + [len(str(_cell(r, h, i))) for r in rows[:200]])))
-        tv.column(i, width=w, anchor=tk.W, stretch=True)
-    for k, r in enumerate(rows):
-        tv.insert("", tk.END, values=[_cell(r, h, i) for i, h in enumerate(headers)], tags=("odd",) if k % 2 else ())
-    tv.tag_configure("odd", background="#FAFAFB")
-    ys = ttk.Scrollbar(inner, orient=tk.VERTICAL, command=tv.yview)
-    xs = ttk.Scrollbar(inner, orient=tk.HORIZONTAL, command=tv.xview)
-    tv.configure(yscrollcommand=ys.set, xscrollcommand=xs.set)
-    tv.grid(row=0, column=0, sticky="nsew")
-    ys.grid(row=0, column=1, sticky="ns")
-    xs.grid(row=1, column=0, sticky="ew")
-    inner.rowconfigure(0, weight=1)
-    inner.columnconfigure(0, weight=1)
+# ---------------------------------------------------------------- data table
+class Table(ttk.Frame):
+    """Sortable table with zebra rows. Ctrl+C / right-click copies (pastes into Excel).
+    Double-click a row with a file path in 'Saved as' (or 'Path') to open the file."""
 
-    def copy(_e=None):
-        sel = tv.selection() or tv.get_children()
-        text = "\t".join(headers) + "\n" + "\n".join("\t".join(str(v) for v in tv.item(i, "values")) for i in sel)
-        tv.clipboard_clear()
-        tv.clipboard_append(text)
+    def __init__(self, parent, headers, rows, height=10, widths=None):
+        super().__init__(parent, style="Card.TFrame")
+        self.headers = list(headers)
+        self.tv = tv = ttk.Treeview(self, columns=list(range(len(self.headers))), show="headings",
+                                    height=max(1, min(height, len(rows) or 1)))
+        body, head = tkfont.Font(font=T.F_BODY), tkfont.Font(font=T.F_SMALL_BOLD)
+        for i, h in enumerate(self.headers):
+            tv.heading(i, text=h, anchor=tk.W, command=lambda c=i: self._sort(c, False))
+            longest = max([str(_cell(r, h, i)) for r in rows[:200]] + [""], key=len)
+            w = (widths or {}).get(h) or max(60, min(420, max(head.measure(h) + 26, body.measure(longest) + 18)))
+            tv.column(i, width=w, minwidth=50, anchor=tk.W, stretch=True)
+        for k, r in enumerate(rows):
+            tv.insert("", tk.END, values=[_cell(r, h, i) for i, h in enumerate(self.headers)],
+                      tags=("odd",) if k % 2 else ())
+        tv.tag_configure("odd", background=T.ZEBRA)
+        ys = ttk.Scrollbar(self, orient=tk.VERTICAL, command=tv.yview)
+        xs = ttk.Scrollbar(self, orient=tk.HORIZONTAL, command=tv.xview)
+        tv.configure(yscrollcommand=ys.set, xscrollcommand=xs.set)
+        tv.grid(row=0, column=0, sticky="nsew")
+        if len(rows) > height:
+            ys.grid(row=0, column=1, sticky="ns")
+        xs.grid(row=1, column=0, sticky="ew")
+        self.rowconfigure(0, weight=1)
+        self.columnconfigure(0, weight=1)
+        tv.bind("<Control-c>", self.copy)
+        tv.bind("<Double-1>", self._open)
+        menu = tk.Menu(tv, tearoff=0)
+        menu.add_command(label="Copy selected rows (or all)", command=self.copy)
+        tv.bind("<Button-3>", lambda e: menu.tk_popup(e.x_root, e.y_root))
 
-    tv.bind("<Control-c>", copy)
-    menu = tk.Menu(tv, tearoff=0)
-    menu.add_command(label="Copy selected rows (or all)", command=copy)
-    tv.bind("<Button-3>", lambda e: menu.tk_popup(e.x_root, e.y_root))
-    frame.tree = tv
-    return frame
+    def copy(self, _e=None):
+        sel = self.tv.selection() or self.tv.get_children()
+        text = "\t".join(self.headers) + "\n" + "\n".join(
+            "\t".join(str(v) for v in self.tv.item(i, "values")) for i in sel)
+        self.clipboard_clear()
+        self.clipboard_append(text)
 
+    def _open(self, _e):
+        for col in ("Saved as", "Path"):
+            if col in self.headers:
+                sel = self.tv.selection()
+                if sel:
+                    p = self.tv.item(sel[0], "values")[self.headers.index(col)]
+                    if p and os.path.exists(p):
+                        os.startfile(p)
 
-def kv_table(parent, pairs, height=12):
-    return table(parent, ["Field", "Value"], [list(p) for p in pairs], height=height,
-                 widths={"Field": 280, "Value": 560})
+    def _sort(self, col, reverse):
+        items = [(self.tv.set(k, col), k) for k in self.tv.get_children("")]
+        items.sort(key=lambda t: (_num(t[0]) is None, _num(t[0]) if _num(t[0]) is not None else t[0].lower()),
+                   reverse=reverse)
+        for idx, (_, k) in enumerate(items):
+            self.tv.move(k, "", idx)
+            self.tv.item(k, tags=("odd",) if idx % 2 else ())
+        self.tv.heading(col, command=lambda: self._sort(col, not reverse))
 
 
 def _cell(r, h, i):
@@ -63,56 +81,180 @@ def _num(s):
         return None
 
 
-def _sort(tv, col, reverse):
-    items = [(tv.set(k, col), k) for k in tv.get_children("")]
-    items.sort(key=lambda t: (_num(t[0]) is None, _num(t[0]) if _num(t[0]) is not None else t[0].lower()), reverse=reverse)
-    for idx, (_, k) in enumerate(items):
-        tv.move(k, "", idx)
-        tv.item(k, tags=("odd",) if idx % 2 else ())
-    tv.heading(col, command=lambda: _sort(tv, col, not reverse))
+# ---------------------------------------------------------------- detail view
+class DetailView(ttk.Frame):
+    """Scrollable, wrapping view: orange section headings, bold labels, values; tables inline.
+    Label column width follows the window, so long values wrap instead of running off a small screen."""
+
+    def __init__(self, parent):
+        super().__init__(parent, style="Card.TFrame")
+        self.text = tk.Text(self, wrap="word", borderwidth=0, highlightthickness=0, bg=T.CARD, fg=T.INK,
+                            font=T.F_BODY, padx=14, pady=10, cursor="arrow", spacing1=2, spacing3=2)
+        ys = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self.text.yview)
+        self.text.configure(yscrollcommand=ys.set)
+        self.text.grid(row=0, column=0, sticky="nsew")
+        ys.grid(row=0, column=1, sticky="ns")
+        self.rowconfigure(0, weight=1)
+        self.columnconfigure(0, weight=1)
+        t = self.text
+        t.tag_configure("title", font=T.F_TITLE, spacing3=6)
+        t.tag_configure("subtitle", font=T.F_SMALL, foreground=T.MUTED, spacing3=8)
+        t.tag_configure("section", font=T.F_SECTION, foreground=T.ORANGE, spacing1=12, spacing3=4)
+        t.tag_configure("label", font=T.F_BOLD, foreground=T.MUTED)
+        t.tag_configure("value", font=T.F_BODY, foreground=T.INK)
+        t.tag_configure("empty", font=T.F_BODY, foreground=T.SUBTLE)
+        t.tag_configure("note", font=T.F_SMALL, foreground=T.MUTED, spacing1=4)
+        t.tag_configure("link", font=T.F_BODY, foreground=T.ORANGE, underline=True)
+        t.tag_bind("link", "<Enter>", lambda e: t.configure(cursor="hand2"))
+        t.tag_bind("link", "<Leave>", lambda e: t.configure(cursor="arrow"))
+        self._tables = []
+        self._links = 0
+        t.bind("<Configure>", self._relayout)
+        t.bind("<MouseWheel>", lambda e: t.yview_scroll(int(-e.delta / 120), "units"))
+        t.configure(state="disabled")
+
+    def clear(self):
+        self.text.configure(state="normal")
+        self.text.delete("1.0", "end")
+        for w in self._tables:
+            w.destroy()
+        self._tables = []
+        self.text.configure(state="disabled")
+
+    def _put(self, s, *tags):
+        self.text.configure(state="normal")
+        self.text.insert("end", s, tags)
+        self.text.configure(state="disabled")
+
+    def title(self, text, subtitle=""):
+        self._put(text + "\n", "title")
+        if subtitle:
+            self._put(subtitle + "\n", "subtitle")
+
+    def section(self, name):
+        self._put(name + "\n", "section")
+
+    def fields(self, pairs):
+        for label, value in pairs:
+            self._put(f"{label}\t", "label", "kv")
+            self._put(f"{value}\n" if value else "—\n", "value" if value else "empty", "kv")
+
+    def note(self, text):
+        self._put(text + "\n", "note")
+
+    def link(self, text, path):
+        tag = f"l{self._links}"
+        self._links += 1
+        self.text.tag_bind(tag, "<Button-1>", lambda e: os.path.exists(path) and os.startfile(path))
+        self._put(text + "\n", "link", tag)
+
+    def table(self, headers, rows, height=12):
+        if not rows:
+            self._put("No rows.\n", "empty")
+            return
+        tbl = Table(self.text, headers, rows, height=height)
+        self._tables.append(tbl)
+        self.text.configure(state="normal")
+        self.text.window_create("end", window=tbl, stretch=1)
+        self.text.insert("end", "\n")
+        self.text.configure(state="disabled")
+        self._size_table(tbl)
+
+    def _size_table(self, tbl):
+        w = max(300, self.text.winfo_width() - 40)
+        tbl.configure(width=w)
+        tbl.grid_propagate(False)
+        rows = min(int(tbl.tv.cget("height")), 12)
+        tbl.configure(height=int((rows + 2.3) * T._px(self, 28)))
+
+    def _relayout(self, e):
+        # label column: 32% of the width, between 140 and 300 px (small screens give values the room)
+        col = max(140, min(300, int(e.width * 0.32)))
+        self.text.tag_configure("kv", tabs=(col,), lmargin1=0, lmargin2=col)
+        for tbl in self._tables:
+            self._size_table(tbl)
 
 
-# ---------------------------------------------------------------- layout pieces
-def card(parent, **kw):
-    return ctk.CTkFrame(parent, fg_color=T.CARD, corner_radius=12, border_width=1, border_color=T.BORDER, **kw)
+# ---------------------------------------------------------------- small pieces
+class StatusCard(tk.Frame):
+    def __init__(self, parent, caption, value="—"):
+        super().__init__(parent, bg=T.STATUS_CARD, highlightthickness=1, highlightbackground=T.LINE)
+        self.cap = tk.Label(self, text=caption.upper(), bg=T.STATUS_CARD, fg=T.MUTED, font=T.F_CAPS, anchor="w")
+        self.cap.pack(fill="x", padx=10, pady=(7, 0))
+        self.val = tk.Label(self, text=value, bg=T.STATUS_CARD, fg=T.INK, font=T.F_BIG, anchor="w")
+        self.val.pack(fill="x", padx=10, pady=(0, 7))
+        self.bind("<Configure>", lambda e: self._fit())
+
+    def set(self, value, rag=None):
+        fg, bg = T.RAG.get(rag, (T.INK, T.STATUS_CARD)) if rag else (T.INK, T.STATUS_CARD)
+        for w in (self, self.cap, self.val):
+            w.configure(bg=bg)
+        self.val.configure(text=value or "—", fg=fg)
+        self._fit()
+
+    def _fit(self):
+        """Largest font (16 -> 9 pt) that fits the card, so long values shrink instead of being cut."""
+        room = self.winfo_width() - 24
+        if room <= 0:
+            return
+        text = self.val.cget("text")
+        for size in (16, 14, 12, 11, 10, 9):
+            f = tkfont.Font(family=T.FONT, size=size, weight="bold")
+            if f.measure(text) <= room:
+                break
+        self.val.configure(font=(T.FONT, size, "bold"))
 
 
-def stat_card(parent, label, value="—", accent=None):
-    c = card(parent)
-    ctk.CTkLabel(c, text=label.upper(), font=T.font(10, "bold"), text_color=T.MUTED).pack(anchor="w", padx=14, pady=(10, 0))
-    v = ctk.CTkLabel(c, text=value, font=T.font(18, "bold"), text_color=accent or T.INK)
-    v.pack(anchor="w", padx=14, pady=(0, 10))
-    c.value = v
-    return c
+class Stepper(tk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent, bg=T.CARD)
+
+    def set(self, stages):
+        for w in self.winfo_children():
+            w.destroy()
+        for i, s in enumerate(stages):
+            rag = {"completed": "green", "current": "blue"}.get(s.state, "grey")
+            fg, bg = T.RAG[rag]
+            mark = "✓ " if s.state == "completed" else ("● " if s.state == "current" else "")
+            tk.Label(self, text=f"{mark}{s.name}", bg=bg, fg=fg, padx=10, pady=3,
+                     font=T.F_SMALL_BOLD if s.state == "current" else T.F_SMALL).pack(side="left", padx=(0 if i == 0 else 4, 0))
+            if i < len(stages) - 1:
+                tk.Label(self, text="›", bg=T.CARD, fg=T.SUBTLE, font=T.F_BODY).pack(side="left", padx=(4, 0))
 
 
-def tabs(parent, names, height=380):
-    """Horizontal tabs (CTkTabview). Returns (tabview, {name: frame})."""
-    tv = ctk.CTkTabview(parent, height=height, fg_color=T.CARD, corner_radius=10, border_width=1, border_color=T.BORDER,
-                        segmented_button_selected_color=T.ORANGE, segmented_button_selected_hover_color=T.ORANGE_HOVER,
-                        segmented_button_unselected_color="#F3F4F6", segmented_button_unselected_hover_color="#E5E7EB",
-                        segmented_button_fg_color="#F3F4F6", text_color=T.INK, anchor="w")
-    frames = {}
-    for n in names:
-        frames[n] = tv.add(n)
-    return tv, frames
+class ThinProgress(tk.Frame):
+    """3 px indeterminate progress line: an orange segment sliding across."""
+
+    def __init__(self, parent):
+        super().__init__(parent, bg=T.LINE, height=3)
+        self.seg = tk.Frame(self, bg=T.ORANGE, height=3)
+        self._pos, self._job = 0.0, None
+
+    def start(self, _interval=None):
+        self.stop()
+        self._tick()
+
+    def _tick(self):
+        self._pos = (self._pos + 0.02) % 1.2
+        self.seg.place(relx=self._pos - 0.2, rely=0, relwidth=0.2, relheight=1)
+        self._job = self.after(30, self._tick)
+
+    def stop(self):
+        if self._job:
+            self.after_cancel(self._job)
+            self._job = None
 
 
-def empty(parent, title, hint=""):
-    f = ctk.CTkFrame(parent, fg_color="transparent")
-    ctk.CTkLabel(f, text=title, font=T.font(15, "bold"), text_color=T.INK).pack(pady=(40, 4))
-    if hint:
-        ctk.CTkLabel(f, text=hint, font=T.font(12), text_color=T.MUTED).pack()
-    return f
+class Pill(tk.Frame):
+    """Header status pill: coloured dot + text."""
 
+    def __init__(self, parent):
+        super().__init__(parent, bg=T.HEADER_HOVER, padx=10, pady=3)
+        self.dot = tk.Label(self, text="●", bg=T.HEADER_HOVER, fg=T.PILL_READY, font=T.F_BODY)
+        self.dot.pack(side="left")
+        self.lbl = tk.Label(self, text="Ready", bg=T.HEADER_HOVER, fg="white", font=T.F_SMALL)
+        self.lbl.pack(side="left", padx=(4, 0))
 
-def stepper(parent, stages):
-    """Stage chevrons: completed green, current blue, pending grey."""
-    f = ctk.CTkFrame(parent, fg_color="transparent")
-    colors = {"completed": (T.GREEN, "white"), "current": (T.BLUE, "white"), "pending": (T.GREY, T.MUTED)}
-    for i, s in enumerate(stages):
-        bg, fg = colors.get(s.state, colors["pending"])
-        mark = "✓  " if s.state == "completed" else ("●  " if s.state == "current" else "")
-        ctk.CTkLabel(f, text=f"{mark}{s.name}", fg_color=bg, text_color=fg, corner_radius=14, height=28,
-                     font=T.font(12, "bold" if s.state == "current" else "normal")).pack(side="left", padx=(0 if i == 0 else 6, 0), ipadx=12)
-    return f
+    def set(self, text, color):
+        self.dot.configure(fg=color)
+        self.lbl.configure(text=text[:60])

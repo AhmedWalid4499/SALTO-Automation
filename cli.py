@@ -1,30 +1,33 @@
-"""Command-line version of Order Lookup (handy for testing / batch use).
+"""Command-line order dissect (handy for testing / batch use).
 
-Usage:  py cli.py 10-1753747 [more order refs...]
+Usage:  py cli.py 10-1234567 [more order refs...] [--keep-open] [--no-subcases] [--no-downloads]
+Saves each order to <Documents>/SALTO Buddy/<order> - <STC>/ including <order>.xlsx.
 """
 import os
 import sys
 
+from salto import config
 from salto.actions import order_lookup
 from salto.browser import SaltoBrowser
+from salto.case import Options
+from salto.export import export_report
 
 
-def main(refs):
+def main(refs, flags):
+    cfg = config.load()
     b = SaltoBrowser(log=lambda m: print(m, flush=True))
-    shots = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screenshots")
-    os.makedirs(shots, exist_ok=True)
     try:
         for ref in refs:
-            rep = order_lookup(b, ref, os.path.join(shots, f"{ref}.png"))
-            print(f"\nOrder {ref}")
-            print(f"  STC ID        : {rep.stc_id}")
-            print(f"  Stages        : " + " > ".join(f"{s.name}[{s.state}]" for s in rep.stages))
-            print(f"  Current stage : {rep.current_stage}")
-            print(f"  Status        : {rep.status}")
-            print(f"  EQPs ({len(rep.eqps)})     : {', '.join(rep.eqps)}")
-            print(f"  Screenshot    : {rep.screenshot}")
+            opts = Options(subcases="--no-subcases" not in flags, downloads="--no-downloads" not in flags)
+            rep = order_lookup(b, ref, cfg["export_dir"], full=True, opts=opts)
+            print(f"\nOrder {ref}: STC {rep.stc_id} | stage {rep.current_stage} | EQPs {', '.join(rep.eqps)}")
+            if rep.case:
+                print(f"  scope devices {len(rep.case.scope_devices)} | sub-cases {len(rep.case.subcases)}"
+                      f" | participants {len(rep.case.participants)}")
+            if rep.folder:
+                print("  saved:", export_report(rep, os.path.join(rep.folder, f"{ref}.xlsx")))
     finally:
-        if "--keep-open" not in sys.argv:
+        if "--keep-open" not in flags:
             b.quit()
 
 
@@ -32,4 +35,4 @@ if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     if not args:
         sys.exit(__doc__)
-    main(args)
+    main(args, [a for a in sys.argv[1:] if a.startswith("--")])

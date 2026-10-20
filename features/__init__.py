@@ -1,6 +1,6 @@
-from .order_lookup import OrderLookup
+from .order_explorer import OrderExplorer
 
 # Each entry becomes a tab in the app, in this order.
 FEATURES = [
-    OrderLookup,
+    OrderExplorer,
 ]

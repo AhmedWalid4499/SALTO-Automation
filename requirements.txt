@@ -1,5 +1,4 @@
 selenium>=4.20
-customtkinter>=5.2
 openpyxl>=3.1
 pillow>=10
 pyinstaller>=6.0

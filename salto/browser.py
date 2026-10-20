@@ -24,6 +24,15 @@ FIREFOX_BIN = r"C:\Program Files\Mozilla Firefox\firefox.exe"
 # Dedicated profile so the tool never fights with your everyday Firefox
 # (a profile can only be open in one Firefox at a time).
 PROFILE_DIR = os.path.join(os.environ.get("LOCALAPPDATA", "."), "SaltoTool", "firefox-profile")
+# Firefox saves every download here without asking; salto.files moves each file into the order folder
+DOWNLOAD_DIR = os.path.join(os.environ.get("LOCALAPPDATA", "."), "SaltoBuddy", "downloads")
+_SAVE_MIME = ",".join([
+    "application/pdf", "application/octet-stream", "application/zip", "application/x-zip-compressed",
+    "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-outlook", "message/rfc822", "text/csv", "text/plain", "text/xml", "application/xml",
+    "image/png", "image/jpeg", "image/gif", "application/vnd.visio", "application/x-msg",
+])
 
 
 class LoginTimeout(RuntimeError):
@@ -47,6 +56,14 @@ class SaltoBrowser:
             opts.binary_location = FIREFOX_BIN
         opts.add_argument("-profile")
         opts.add_argument(PROFILE_DIR)
+        os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+        for k, v in {"browser.download.folderList": 2, "browser.download.dir": DOWNLOAD_DIR,
+                     "browser.download.useDownloadDir": True, "browser.download.alwaysOpenPanel": False,
+                     "browser.download.always_ask_before_handling_new_types": False,
+                     "browser.helperApps.neverAsk.saveToDisk": _SAVE_MIME, "pdfjs.disabled": True,
+                     # intranet names only resolve through the corporate DNS: never use DNS-over-HTTPS
+                     "network.trr.mode": 5}.items():
+            opts.set_preference(k, v)
         self.log("Starting Firefox...")
         self.on_state("starting")
         # The installed app ships geckodriver; from source, Selenium Manager fetches it
@@ -89,7 +106,7 @@ class SaltoBrowser:
             self.on_state("connected")
             return
         self.on_state("signing-in")
-        d.get(SALTO_URL)
+        self._open_salto(timeout)
         deadline = time.time() + timeout
         asked = False
         while time.time() < deadline:
@@ -112,6 +129,22 @@ class SaltoBrowser:
                 asked = True
             time.sleep(1.5)
         raise LoginTimeout("Login was not completed in time.")
+
+    def _open_salto(self, timeout):
+        """Load SALTO, waiting out network/VPN drops instead of failing."""
+        deadline, warned = time.time() + timeout, False
+        while True:
+            try:
+                self.driver.get(SALTO_URL)
+                return
+            except WebDriverException as exc:
+                if "neterror" not in str(exc) or time.time() > deadline:
+                    raise
+                if not warned:
+                    self.log("SALTO is unreachable (VPN / network?). Waiting for the connection...")
+                    self.on_state("offline-network")
+                    warned = True
+                time.sleep(10)
 
     def _choose_professional_account(self):
         """On the Orange Connect page, pick the professional-account option.

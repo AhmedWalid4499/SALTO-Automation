@@ -10,7 +10,11 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 DEFAULTS = {
     "check_updates_on_start": True,
     "skipped_version": "",
+    # each order is saved in <export_dir>/<GOLD order> - <STC>/ (Downloads, Screenshots, Excel)
     "export_dir": os.path.join(os.path.expanduser("~"), "Documents", APP_NAME),
+    "subcases": True,
+    "downloads": True,
+    "tab_screenshots": False,
 }
 
 
