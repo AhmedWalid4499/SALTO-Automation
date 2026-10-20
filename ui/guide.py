@@ -23,8 +23,10 @@ GUIDE = [
         ("steps", ["Connect to the Orange network (VPN if you work remotely).",
                    "Open SALTO Buddy from the Start Menu or the desktop shortcut.",
                    "In Order explorer, type a GOLD order number (for example 10-1764901) and press Enter.",
-                   "Wait for the green pill 'Connected to SALTO' and the order to appear (a few minutes for a big "
-                   "order: every sub-case is opened)."]),
+                   "The order appears in about 20 seconds. Sub-cases and FLIP serial numbers fill in by themselves "
+                   "afterwards (about a minute) - you can already work with what is shown."]),
+        ("p", "SALTO Buddy signs in to SALTO in the background as soon as it opens. An order you have read before "
+              "appears at once (saved copy) and is refreshed behind it."),
         ("p", "Firefox works hidden in the background. The first time, the Orange sign-in is done for you; if Orange "
               "ever needs your password or MFA, Firefox appears so you can finish it."),
     ]),
@@ -88,6 +90,7 @@ GUIDE = [
         ("list", ["Save folder for orders.",
                   "Show the Firefox window (normally hidden).",
                   "Open every sub-case / download all attachments automatically / screenshot every tab.",
+                  "Read the full audit history (slower): by default only the latest audit page is read.",
                   "Check for updates at start.",
                   "Ask Buddy: your own Claude key (optional - the team key is used otherwise)."]),
     ]),
@@ -176,7 +179,9 @@ def show_whats_new(app):
 
     def page_new(d):
         d.title("What's new")
-        for s in ["FLIP serial numbers: for every EQP, SALTO Buddy goes to FLIP and gets each device's serial number.",
+        for s in ["Much faster: the order appears in about 20 seconds; sub-cases and serial numbers fill in after.",
+                  "Orders you read before open instantly, and SALTO is signed in as soon as the app starts.",
+                  "FLIP serial numbers: for every EQP, SALTO Buddy goes to FLIP and gets each device's serial number.",
                   "Ask Buddy: a chat that answers questions about an order in plain language (serial numbers too).",
                   "No setup: Ask Buddy gets the team's key from SharePoint by itself.",
                   "A built-in guide: the Guide button in the header, at any time."]:

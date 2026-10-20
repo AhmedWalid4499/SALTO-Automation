@@ -3,13 +3,14 @@
 Layout (one job per tab): Summary | Devices | People | Case tabs | Sub-cases | Files
 """
 import os
+import threading
 import tkinter as tk
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
-from salto import capture, config, files
-from salto.actions import order_lookup
-from salto.case import Options, download_attachments
+from salto import cache, capture, config, files
+from salto.actions import order_lookup, read_stages
+from salto.case import Options, download_attachments, read_subcases
 from salto.export import export_report
 from ui import theme as T
 from ui.widgets import DetailView, Segmented, StatusCard, Stepper, Table, ThinProgress
@@ -111,25 +112,107 @@ class OrderExplorer(Feature):
         self.go(callback)
 
     def go(self, callback=None):
+        """Phase 1 reads the main case and shows it; phase 2 (sub-cases, FLIP) fills in afterwards."""
         ref = self.order.get().strip()
         if not ref or str(self.open_btn.cget("state")) == "disabled":
             return
+        if getattr(self, "_cancel", None):
+            self._cancel.set()  # stop the previous order's sub-cases
+        self._cancel = threading.Event()
         self._callback = callback
         cfg = self.app.cfg
         opts = Options(subcases=cfg.get("subcases", True), downloads=cfg.get("downloads", False),
-                       tab_screenshots=cfg.get("tab_screenshots", False), flip=cfg.get("flip", True))
+                       tab_screenshots=cfg.get("tab_screenshots", False), flip=cfg.get("flip", True),
+                       full_audit=cfg.get("full_audit", False), later_subcases=True, cancel=self._cancel)
         self.app.log(f"--- Opening {ref} ---")
+        cached, saved = cache.load(ref)
+        if cached:  # instant: last saved copy, while SALTO is read again behind it
+            self.show(cached, note=f"saved copy from {datetime.fromtimestamp(saved):%d-%b %H:%M} - updating...")
         self.app.busy(True, f"Opening {ref}...")
-        self.progress.pack(fill="x", pady=(8, 0), after=self.title_lbl.master)
-        self.progress.start()
-        self.title_lbl.configure(text=f"{ref} · reading SALTO...")
-        self.run(lambda b: order_lookup(b, ref, cfg["export_dir"], full=True, opts=opts), self.show, self.failed,
-                 busy_widgets=(self.open_btn,))
+        self._progress(True)
+        if not cached:
+            self.title_lbl.configure(text=f"{ref} · reading SALTO...")
+        self.run(lambda b: order_lookup(b, ref, cfg["export_dir"], full=True, opts=opts),
+                 lambda rep: self._phase1_done(rep, opts), self.failed, busy_widgets=(self.open_btn,))
+
+    def _progress(self, on):
+        if on:
+            self.progress.pack(fill="x", pady=(8, 0), after=self.title_lbl.master)
+            self.progress.start()
+        else:
+            self.progress.stop()
+            self.progress.pack_forget()
 
     def _done_busy(self):
         self.app.busy(False)
-        self.progress.stop()
-        self.progress.pack_forget()
+        self._progress(False)
+
+    def _phase1_done(self, rep, opts):
+        pending = bool(rep.case and rep.case.pending_subs)
+        self.show(rep, note=f"reading {len(rep.case.pending_subs)} sub-case(s) and FLIP..." if pending else "",
+                  keep_callback=pending)
+        if not pending:
+            cache.save(rep)
+            return
+        self.app.busy(True, "Reading sub-cases and FLIP...")
+        self._progress(True)
+        total = len(rep.case.pending_subs)
+
+        def each(sub):
+            self.app.ui(lambda: self._sub_ready(rep, total))
+
+        def phase2(b):
+            return read_subcases(b, rep.case, opts, self.app.log, read_stages, on_each=each)
+
+        self.run(phase2, lambda _r: self._phase2_done(rep), lambda exc: self._phase2_done(rep, exc))
+
+    def _sub_ready(self, rep, total):
+        if self.rep is not rep:
+            return  # another order is on screen now
+        done = len(rep.case.subcases)
+        self._refresh_live(note=f"sub-cases read: {done} of {total}" + ("" if done == total else "..."))
+
+    def _phase2_done(self, rep, exc=None):
+        self._done_busy()
+        for sc in rep.case.subcases:  # EQPs found in sub-cases
+            if sc.stc_id.startswith("EQP-") and sc.stc_id not in rep.eqps:
+                rep.eqps.append(sc.stc_id)
+        if exc:
+            self.app.log(f"Reading sub-cases stopped: {str(exc).splitlines()[0]}")
+        if not rep.case.pending_subs:
+            cache.save(rep)
+        if self.rep is rep:
+            self._refresh_live(note="")
+        cb, self._callback = getattr(self, "_callback", None), None
+        if cb:
+            cb(rep, None)
+
+    def _refresh_live(self, note):
+        """Update the parts that sub-cases feed, keeping the tab the user is looking at."""
+        rep, case = self.rep, self.rep.case
+        self._set_title(rep, note)
+        self.cards["EQPs"].set(str(len(set(rep.eqps) | {c.stc_id for c in case.subcases if c.stc_id.startswith("EQP-")})))
+        self.cards["Sub-cases"].set(f"{len(case.subcases)}" + (f" / {len(case.subcases) + len(case.pending_subs)}"
+                                                              if case.pending_subs else ""))
+        self.cards["Attachments"].set(str(len(self._attachments())))
+        current = self.tabs.index(self.tabs.select())
+        self._summary_page()
+        self._flip_page()
+        self._people_page()
+        self._subcases_page()
+        self._files_page()
+        self.tabs.select(current)
+
+    def _set_title(self, rep, note=""):
+        case = rep.case
+        customer = ""
+        if case:
+            for td in case.tabs.values():
+                for _, fs in td.sections:
+                    customer = customer or dict(fs).get("Customer name", "")
+        self.title_lbl.configure(text="  ·  ".join(x for x in (rep.order_ref, rep.stc_id or "no STC found",
+                                                                case.title if case else "", customer) if x)
+                                 + (f"     ({note})" if note else ""))
 
     def failed(self, exc):
         self._done_busy()
@@ -186,22 +269,17 @@ class OrderExplorer(Feature):
                 os.startfile(path)
 
     # ------------------------------------------------------------ results
-    def show(self, rep):
+    def show(self, rep, note="", keep_callback=False):
         self._done_busy()
         self.rep = rep
         if rep.stc_id:
             self.app.reports[rep.order_ref] = rep  # shared with Ask Buddy
-        cb, self._callback = getattr(self, "_callback", None), None
-        if cb:
-            cb(rep, None)
+        if not keep_callback and not note.startswith("saved copy"):
+            cb, self._callback = getattr(self, "_callback", None), None
+            if cb:
+                cb(rep, None)
         case = rep.case
-        customer = ""
-        if case:
-            for td in case.tabs.values():
-                for _, fs in td.sections:
-                    customer = customer or dict(fs).get("Customer name", "")
-        self.title_lbl.configure(text="  ·  ".join(x for x in (rep.order_ref, rep.stc_id or "no STC found",
-                                                                case.title if case else "", customer) if x))
+        self._set_title(rep, note)
         self.export_btn.configure(state="normal" if rep.stc_id else "disabled")
         self.folder_lbl.configure(text=f"Files: {rep.folder}" if rep.folder else "")
         self.stepper.set(rep.stages)

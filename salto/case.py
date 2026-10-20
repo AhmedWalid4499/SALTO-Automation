@@ -61,7 +61,10 @@ class Options:
     downloads: bool = True
     tab_screenshots: bool = False
     flip: bool = True         # FLIP serial numbers for EQP sub-cases
+    full_audit: bool = False  # every audit page (slow); otherwise the latest page only
+    later_subcases: bool = False  # read the main case only; read_subcases() does the rest afterwards
     folder: str = ""          # order folder (Downloads/ and Screenshots/ go inside)
+    cancel: object = None     # threading.Event: stop reading sub-cases (another order was opened)
 
 
 @dataclass
@@ -77,6 +80,7 @@ class CaseData:
     screenshots: list = field(default_factory=list)
     subcases: list = field(default_factory=list)     # [CaseData]
     flip: dict = field(default_factory=dict)         # EQP only: {'serials', 'parts', 'exports', 'errors'}
+    pending_subs: list = field(default_factory=list)  # sub-case ids still to read (read_subcases)
     errors: list = field(default_factory=list)
 
     @property
@@ -94,23 +98,37 @@ class CaseData:
 
 
 # ---------------------------------------------------------------- helpers
+_PANEL_JS = r"""
+const p = [...document.querySelectorAll('[role=tabpanel]')].find(e => e.offsetWidth || e.offsetHeight);
+if (!arguments[0]) return p || null;
+if (!p) return null;
+const t = p.innerText || '';
+// cheap fingerprint of the panel: length + a sample, and whether Pega still shows a busy indicator
+return [t.length, t.slice(0, 200) + t.slice(-200),
+        /Loading/.test(t) || !!document.querySelector('.pega_ui_busyIndicator:not([style*="none"]), .loading-indicator')];
+"""
+
+
 def _visible_panel(b: SaltoBrowser):
-    for p in b.driver.find_elements(By.XPATH, "//*[@role='tabpanel']"):
-        with suppress(WebDriverException):
-            if p.is_displayed():
-                return p
-    return None
+    """The case tab panel on screen (one in-page call instead of asking Firefox about each panel)."""
+    try:
+        return b.driver.execute_script(_PANEL_JS, False)
+    except WebDriverException:
+        return None
 
 
 def _wait_stable(b, timeout=20):
+    """Wait until the visible tab panel has content that stopped changing (checked every 0.3 s)."""
     deadline, last = time.time() + timeout, None
     while time.time() < deadline:
-        time.sleep(0.8)
-        p = _visible_panel(b)
-        txt = p.text if p else ""
-        if txt and txt == last and "Loading" not in txt:
-            return p
-        last = txt
+        time.sleep(0.3)
+        try:
+            sig = b.driver.execute_script(_PANEL_JS, True)
+        except WebDriverException:
+            sig = None
+        if sig and sig[0] and not sig[2] and sig[:2] == (last or [None, None])[:2]:
+            return _visible_panel(b)
+        last = sig
     return _visible_panel(b)
 
 
@@ -140,8 +158,22 @@ def tab_names(b):
 
 
 def enter_case(b, case_id, timeout=40):
-    """Switch the driver into the frame showing this case."""
-    b.frame_with_text(f"({case_id})", timeout=timeout)
+    """Switch the driver into the frame showing this case.
+
+    Matched on the frame's own title ('Order And Deliver EQP-198834'): the case id as text is not
+    enough, because a parent case lists its sub-cases' ids in its Overview tree."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        for i, _ in enumerate(b.frames()):
+            if i == 0:
+                continue  # the portal page itself can carry the same title; the case lives in a frame
+            with suppress(WebDriverException):
+                title = b.driver.execute_script("return document.title || ''")
+                if title.endswith(case_id) and b.driver.execute_script(
+                        "return !!document.body && document.body.innerText.indexOf(arguments[0]) >= 0", f"({case_id})"):
+                    return
+        time.sleep(0.4)
+    b.frame_with_text(f"({case_id})", timeout=5)  # last resort: the old text match
 
 
 # ---------------------------------------------------------------- header / participants
@@ -360,6 +392,10 @@ def read_audit(b, log=print, max_pages=60):
         return _tabdata("Audit", raw)
     g = grids[0]
     rows, seen = list(g["rows"]), {repr(r) for r in g["rows"]}
+    more = any(x.is_displayed() for x in panel.find_elements(By.XPATH, ".//button[@title='Next Page']"))
+    if max_pages <= 1:  # quick read: latest page only
+        name = "History (latest page - older pages not read)" if more else "History"
+        return TabData("Audit", grids=[Grid(name, g["headers"], rows)], text=raw.get("text", ""))
     for page in range(2, max_pages + 1):
         nxt = [x for x in panel.find_elements(By.XPATH, ".//button[@title='Next Page']") if x.is_displayed()]
         if not nxt:
@@ -469,7 +505,7 @@ def open_subcase(b, parent_id, sub_id):
     b.driver.execute_script("arguments[0].scrollIntoView({block:'center'})", link[0])
     link[0].click()
     enter_case(b, sub_id, timeout=60)
-    time.sleep(1.5)
+    time.sleep(0.5)
 
 
 def close_case_tab(b, case_id):
@@ -501,9 +537,9 @@ def read_case(b: SaltoBrowser, case_id: str, opts: Options = None, log=print, re
             elif name == "Attachments":
                 data.tabs[name], data.attachments = read_attachments(b, case_id, opts, log)
             elif name == "Audit":
-                data.tabs[name] = read_audit(b, log)
-            elif name == "TS" and depth > 0:
-                continue  # a sub-case's TS repeats the parent's device tree: read once, on the main case
+                data.tabs[name] = read_audit(b, log, max_pages=60 if opts.full_audit else 1)
+            elif name in ("TS", "Site") and depth > 0:
+                continue  # a sub-case repeats the order's device tree and site: read once, on the main case
             elif name == "TS":
                 nodes = read_ts(b, log)
                 if depth == 0 or any(n.devices.rows or (n.all_devices and n.all_devices.rows) for n in nodes):
@@ -551,23 +587,43 @@ def read_case(b: SaltoBrowser, case_id: str, opts: Options = None, log=print, re
                 enter_case(b, case_id, timeout=15)
 
     if opts.subcases and depth == 0:
-        for i, sid in enumerate(sub_ids, 1):
-            log(f"Sub-case {i}/{len(sub_ids)}: {sid}...")
-            try:
-                open_subcase(b, case_id, sid)
-                data.subcases.append(read_case(b, sid, opts, log, read_stages, depth + 1))
-            except WebDriverException as exc:
-                data.errors.append(f"{sid}: {str(exc).splitlines()[0][:120]}")
-                log(f"  could not open {sid}")
-            finally:
-                with suppress(WebDriverException):
-                    close_case_tab(b, sid)
-                with suppress(WebDriverException):
-                    _focus_case_tab(b, case_id)
-                    enter_case(b, case_id)
+        # EQPs first: their FLIP serial numbers are usually what people wait for
+        data.pending_subs = sorted(sub_ids, key=lambda s: not s.startswith("EQP-"))
+        if not opts.later_subcases:
+            read_subcases(b, data, opts, log, read_stages)
     with suppress(WebDriverException):
         enter_case(b, case_id, timeout=15)
         open_tab(b, "Overview")
+    return data
+
+
+def read_subcases(b, data, opts, log=print, read_stages=None, on_each=None):
+    """Read data.pending_subs one by one (each opened from the main case); on_each(sub) after each one."""
+    case_id = data.stc_id
+    total = len(data.pending_subs) + len(data.subcases)
+    while data.pending_subs:
+        if opts.cancel is not None and opts.cancel.is_set():
+            log("Stopped reading sub-cases (another order was opened).")
+            break
+        sid = data.pending_subs[0]
+        log(f"Sub-case {len(data.subcases) + 1}/{total}: {sid}...")
+        sub = None
+        try:
+            open_subcase(b, case_id, sid)
+            sub = read_case(b, sid, opts, log, read_stages, depth=1)
+            data.subcases.append(sub)
+        except WebDriverException as exc:
+            data.errors.append(f"{sid}: {str(exc).splitlines()[0][:120]}")
+            log(f"  could not open {sid}")
+        finally:
+            data.pending_subs.pop(0)
+            with suppress(WebDriverException):
+                close_case_tab(b, sid)
+            with suppress(WebDriverException):
+                _focus_case_tab(b, case_id)
+                enter_case(b, case_id)
+        if on_each and sub:
+            on_each(sub)
     return data
 
 
@@ -577,6 +633,6 @@ def _focus_case_tab(b, case_id):
     for li in d.find_elements(By.XPATH, f"//li[@role='tab' and starts-with(@aria-label, '{case_id} ')]"):
         if li.get_attribute("aria-selected") != "true":
             li.click()
-            time.sleep(1.5)
+            time.sleep(0.8)
         return True
     return False

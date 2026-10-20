@@ -101,6 +101,8 @@ def order_part(rep, part):
             out["scope_counts"] = {f"{n.product} > {n.node}": dict(n.counts) for n in case.scope}
             out["subcases"] = [{"case": s.stc_id, "type": s.title, "stages": [f"{x.name}: {x.state}" for x in s.stages]}
                                for s in case.subcases]
+            if getattr(case, "pending_subs", None):  # still being read in the background
+                out["subcases_still_loading"] = list(case.pending_subs)
         return out
     if part == "devices":
         return [{"node": f"{n.product} > {n.node}", "counts": dict(n.counts),

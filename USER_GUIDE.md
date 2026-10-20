@@ -7,7 +7,9 @@ SALTO Buddy reads a GOLD order in SALTO for you and shows everything in one plac
 1. Connect to the Orange network (VPN if you work remotely).
 2. Open SALTO Buddy from the Start Menu or the desktop shortcut.
 3. In Order explorer, type a GOLD order number (for example 10-1764901) and press Enter.
-4. Wait for the green pill 'Connected to SALTO' and the order to appear (a few minutes for a big order: every sub-case is opened).
+4. The order appears in about 20 seconds. Sub-cases and FLIP serial numbers fill in by themselves afterwards (about a minute) - you can already work with what is shown.
+
+SALTO Buddy signs in to SALTO in the background as soon as it opens. An order you have read before appears at once (saved copy) and is refreshed behind it.
 
 Firefox works hidden in the background. The first time, the Orange sign-in is done for you; if Orange ever needs your password or MFA, Firefox appears so you can finish it.
 
@@ -74,6 +76,7 @@ Have your own key? Settings > Ask Buddy > paste it, Test, Done. Your own key is 
 - Save folder for orders.
 - Show the Firefox window (normally hidden).
 - Open every sub-case / download all attachments automatically / screenshot every tab.
+- Read the full audit history (slower): by default only the latest audit page is read.
 - Check for updates at start.
 - Ask Buddy: your own Claude key (optional - the team key is used otherwise).
 

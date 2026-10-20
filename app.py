@@ -75,6 +75,8 @@ class App:
         if self.cfg.get("check_updates_on_start", True):
             root.after(1500, lambda: self.check_updates(silent=True))
         root.after(3000, self._find_team_key)
+        # warm up: start Firefox and sign in to SALTO now, so the first order does not wait for it
+        root.after(800, lambda: self.worker.submit(lambda b: b.ensure_logged_in(), on_error=lambda e: None))
         if self.cfg.get("seen_version") != __version__:  # first start after install / update: walkthrough
             root.after(1200, self._whats_new)
 
@@ -214,6 +216,7 @@ class App:
                                        ("downloads", "Download all attachments automatically while reading"),
                                        ("tab_screenshots", "Screenshot every tab while reading"),
                                        ("flip", "Get serial numbers from FLIP for EQPs"),
+                                       ("full_audit", "Read the full audit history (slower)"),
                                        ("check_updates_on_start", "Check for updates when SALTO Buddy starts")]):
             opts[k] = tk.BooleanVar(value=self.cfg.get(k, config.DEFAULTS.get(k, True)))
             ttk.Checkbutton(f, text=text, variable=opts[k]).grid(row=4 + i, column=0, columnspan=3, sticky="w", pady=2)
