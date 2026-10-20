@@ -30,10 +30,48 @@ def team_key_path(cfg):
     return os.path.join(os.path.expandvars(folder), TEAM_KEY_FILE) if folder else ""
 
 
+def portable(path):
+    """Store a folder relative to %USERPROFILE%, so a SharePoint sync path works on colleagues' PCs too."""
+    home = os.path.expanduser("~")
+    if path.lower().startswith(home.lower() + os.sep):
+        return "%USERPROFILE%" + path[len(home):]
+    return path
+
+
+def _sync_roots():
+    """Folders OneDrive syncs on this PC: personal OneDrive (with SharePoint shortcuts) and synced SharePoint libraries."""
+    roots = []
+    try:
+        import winreg
+        base = r"Software\SyncEngines\Providers\OneDrive"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, base) as k:
+            for i in range(winreg.QueryInfoKey(k)[0]):
+                with winreg.OpenKey(k, winreg.EnumKey(k, i)) as sub:
+                    roots.append(winreg.QueryValueEx(sub, "MountPoint")[0])
+    except OSError:
+        pass
+    roots.append(os.environ.get("OneDriveCommercial", ""))
+    return [r for r in dict.fromkeys(roots) if r and os.path.isdir(r)]
+
+
+def find_team_key(max_depth=4):
+    """Look for salto-buddy-team.key in the synced folders. Returns its folder or ''."""
+    for root in _sync_roots():
+        base_depth = root.rstrip(os.sep).count(os.sep)
+        for folder, dirs, files in os.walk(root):
+            if TEAM_KEY_FILE in files:
+                return folder
+            if folder.count(os.sep) - base_depth >= max_depth:
+                dirs[:] = []
+            else:
+                dirs[:] = [d for d in dirs if not d.startswith((".", "$"))]
+    return ""
+
+
 def read_team_key(cfg):
     path = team_key_path(cfg)
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding="utf-8-sig") as f:  # -sig: files saved with Notepad may start with a BOM
             return f.read().strip()
     except OSError:
         return ""

@@ -73,6 +73,24 @@ class App:
         root.after(80, self._pump)
         if self.cfg.get("check_updates_on_start", True):
             root.after(1500, lambda: self.check_updates(silent=True))
+        root.after(3000, self._find_team_key)
+
+    def _find_team_key(self):
+        """If there is no usable key yet, look for the team key in this PC's synced SharePoint/OneDrive folders."""
+        if keystore.unprotect(self.cfg.get("claude_key", "")) or config.read_team_key(self.cfg):
+            return
+
+        def work():
+            folder = config.find_team_key()
+            if folder:
+                def found():
+                    self.cfg["team_key_dir"] = config.portable(folder)
+                    config.save(self.cfg)
+                    self.log(f"Ask Buddy: found the team key in {folder}", quiet=True)
+                    for feat in self.features:
+                        getattr(feat, "key_changed", lambda: None)()
+                self.ui(found)
+        threading.Thread(target=work, daemon=True).start()
 
     # ------------------------------------------------------------ chrome
     def _header(self):
@@ -235,7 +253,7 @@ class App:
         ttk.Label(f, text="Team key folder (only Orange staff can open it). Leave your own key empty to use the "
                           "team key.", style="Muted.TLabel", wraplength=500).grid(row=14, column=0, columnspan=3,
                                                                                   sticky="w", pady=(10, 0))
-        team_dir = tk.StringVar(value=self.cfg.get("team_key_dir") or config.TEAM_KEY_DIR)
+        team_dir = tk.StringVar(value=os.path.expandvars(self.cfg.get("team_key_dir") or config.TEAM_KEY_DIR))
         ttk.Entry(f, textvariable=team_dir, width=52).grid(row=15, column=0, sticky="ew", pady=(4, 0))
         ttk.Button(f, text="Browse", command=lambda: team_dir.set(
             filedialog.askdirectory(initialdir=team_dir.get() or None, parent=w) or team_dir.get())).grid(
@@ -284,7 +302,8 @@ class App:
             new_key = key.get().strip()
             if new_key and not new_key.startswith("(saved"):
                 self.cfg["claude_key"] = keystore.protect(new_key)
-            self.cfg["team_key_dir"] = "" if team_dir.get().strip() == config.TEAM_KEY_DIR else team_dir.get().strip()
+            td = team_dir.get().strip()
+            self.cfg["team_key_dir"] = "" if td == config.TEAM_KEY_DIR else config.portable(td)
             config.save(self.cfg)
             for feat in self.features:
                 getattr(feat, "key_changed", lambda: None)()
