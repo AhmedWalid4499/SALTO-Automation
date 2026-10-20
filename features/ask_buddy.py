@@ -18,6 +18,7 @@ class AskBuddy(Feature):
 
     def build(self, parent):
         self.bot = None
+        self.bot_key = ""
         self.busy = False
         head = tk.Frame(parent, bg=T.CARD)
         head.pack(fill="x")
@@ -93,19 +94,47 @@ class AskBuddy(Feature):
         self._welcome()
 
     def _ensure_bot(self):
-        if self.bot:
-            return True
-        # own key first, then the team key file, then the environment
-        key = (keystore.unprotect(self.app.cfg.get("claude_key", "")) or config.read_team_key(self.app.cfg)
-               or os.environ.get("ANTHROPIC_API_KEY", ""))
+        return True  # the key is resolved on the chat thread (it may need SharePoint): see _get_bot
+
+    def _local_key(self):
+        """(key, source) from: own key, synced team file, team key cached from SharePoint, environment."""
+        cfg = self.app.cfg
+        for source, key in (("own", keystore.unprotect(cfg.get("claude_key", ""))),
+                            ("team file", config.read_team_key(cfg)),
+                            ("cache", keystore.unprotect(cfg.get("team_key_cache", ""))),
+                            ("env", os.environ.get("ANTHROPIC_API_KEY", ""))):
+            if key:
+                return key, source
+        return "", ""
+
+    def _fetch_team_key(self, status):
+        """Blocking (chat thread): read the team key from the SharePoint link through the browser worker."""
+        from salto import teamkey
+        status("Getting the team key from SharePoint (first time only)...")
+        done, box = threading.Event(), {}
+        self.app.worker.submit(lambda b: teamkey.fetch(b, log=self.app.log),
+                               lambda key: (box.update(key=key), done.set()),
+                               lambda exc: (box.update(err=exc), done.set()))
+        done.wait()
+        if box.get("err"):
+            raise RuntimeError(f"Could not get the team key from SharePoint: {box['err']}")
+        key = box["key"]
+
+        def save():
+            self.app.cfg["team_key_cache"] = keystore.protect(key)
+            config.save(self.app.cfg)
+        self.app.ui(save)
+        return key
+
+    def _get_bot(self, status, refresh=False):
+        key, source = ("", "") if refresh else self._local_key()
         if not key:
-            if messagebox.askyesno("SALTO Buddy", "Ask Buddy needs a Claude API key: your own, or the team key "
-                                                  "(Settings > Ask Buddy > Team key folder).\n\nOpen Settings now?"):
-                self.app.show_settings()
-            return False
-        from salto.assistant import Assistant
-        self.bot = Assistant(key, self.app.reports, self._open_order, log=self.app.log)
-        return True
+            key, source = self._fetch_team_key(status), "cache"
+        if not self.bot or self.bot_key != key:
+            from salto.assistant import Assistant
+            self.bot = Assistant(key, self.app.reports, self._open_order, log=self.app.log)
+            self.bot_key = key
+        return source
 
     def key_changed(self):
         self.bot = None  # rebuilt with the new key on the next question
@@ -147,8 +176,19 @@ class AskBuddy(Feature):
             self.app.ui(upd)
 
         def work():
+            import anthropic
             try:
-                answer, tag = self.bot.ask(text, cur, status), "bot"
+                source = self._get_bot(status)
+                try:
+                    answer = self.bot.ask(text, cur, status)
+                except anthropic.AuthenticationError:
+                    if source != "cache":
+                        raise
+                    # the team key was replaced on SharePoint: fetch the new one and ask again
+                    self.bot.messages.pop()  # drop the unanswered question; it is asked again below
+                    self._get_bot(status, refresh=True)
+                    answer = self.bot.ask(text, cur, status)
+                tag = "bot"
             except Exception as exc:
                 answer, tag = _friendly(exc), "error"
             self.app.ui(lambda: self._answer(answer, tag))

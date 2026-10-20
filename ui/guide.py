@@ -65,18 +65,19 @@ GUIDE = [
         ("p", "Buddy only uses what SALTO shows. If a field does not exist in SALTO (for example a serial number), "
               "it says so and offers the closest fields. Answers come from Claude (Anthropic): your question and the "
               "order data it needs are sent there."),
-        ("h", "Getting Ask Buddy ready (team key)"),
-        ("steps", ["Open the team's 'SALTO Buddy' SharePoint folder (the link your team lead shared).",
-                   "Click 'Sync' (or 'Add shortcut to My files') so it appears in File Explorer.",
-                   "Restart SALTO Buddy: it finds the team key by itself.",
-                   "Not found? Settings > Ask Buddy > Team key folder > Browse, pick the synced folder, Done."]),
+        ("h", "The team key (nothing to do)"),
+        ("p", "Ask Buddy uses the team's shared Claude key. The first time you ask a question, SALTO Buddy gets it "
+              "from the team SharePoint folder by itself (about 30 seconds) with your Orange Microsoft account, then "
+              "keeps it encrypted on your PC. If Microsoft ever asks you to sign in, Firefox appears: sign in once "
+              "and Buddy carries on."),
+        ("p", "Have your own key? Settings > Ask Buddy > paste it, Test, Done. Your own key is used first."),
     ]),
     ("Settings", [
         ("list", ["Save folder for orders.",
                   "Show the Firefox window (normally hidden).",
                   "Open every sub-case / download all attachments automatically / screenshot every tab.",
                   "Check for updates at start.",
-                  "Ask Buddy: your own Claude key (optional), or the team key folder."]),
+                  "Ask Buddy: your own Claude key (optional - the team key is used otherwise)."]),
     ]),
     ("Updates", [
         ("p", "SALTO Buddy checks for a new version every time it starts. When there is one, the header button turns "
@@ -86,7 +87,8 @@ GUIDE = [
     ("Troubleshooting", [
         ("list", ["Red pill 'Offline - waiting for network': connect the VPN; SALTO Buddy carries on by itself.",
                   "Sign-in does not finish: turn on 'Show the Firefox window' in Settings and complete it there.",
-                  "Ask Buddy says it needs a key: get the team key ready (Ask Buddy section above).",
+                  "Ask Buddy cannot get the team key: check you are on the Orange network and can open the team "
+                  "SharePoint folder; or add your own key in Settings.",
                   "'SALTO Buddy is already open': it is running - look in the taskbar.",
                   "Anything else: click 'Show activity' at the bottom and send a screenshot of it."]),
     ]),
@@ -157,12 +159,13 @@ def show_whats_new(app):
     content.pack(fill="both", expand=True)
 
     def key_ready():
-        return bool(keystore.unprotect(app.cfg.get("claude_key", "")) or config.read_team_key(app.cfg))
+        return bool(keystore.unprotect(app.cfg.get("claude_key", "")) or config.read_team_key(app.cfg)
+                    or keystore.unprotect(app.cfg.get("team_key_cache", "")))
 
     def page_new(d):
         d.title("What's new")
         for s in ["Ask Buddy: a chat that answers questions about an order in plain language.",
-                  "Team key: Ask Buddy works for the whole team with one shared key on SharePoint.",
+                  "No setup: Ask Buddy gets the team's key from SharePoint by itself.",
                   "A built-in guide: the Guide button in the header, at any time."]:
             d.bullet(s)
         d.note_body("The next steps take one minute and get you ready.")
@@ -173,16 +176,15 @@ def show_whats_new(app):
                          "Wait for the order to load (Firefox works hidden in the background)."])
 
     def page_key(d):
-        d.title("Step 2 - Get Ask Buddy ready")
+        d.title("Step 2 - Ask Buddy is ready for you")
         if key_ready():
-            d.section("Ask Buddy is ready")
-            d.note_body("A Claude key was found (the team key or your own). Nothing to do here.")
+            d.section("Ready")
+            d.note_body("Ask Buddy already has its key. Nothing to do here.")
             return
-        d.section("Connect the team key")
-        render_steps(d, ["Open the team's 'SALTO Buddy' SharePoint folder (the link your team lead shared).",
-                         "Click 'Sync' (or 'Add shortcut to My files').",
-                         "Come back here and click 'Check again'."])
-        d.note_body("Or point to the folder yourself: Settings > Ask Buddy > Team key folder > Browse.")
+        d.section("Nothing to set up")
+        d.note_body("The first time you ask Buddy a question, SALTO Buddy gets the team's key from SharePoint by "
+                    "itself (about 30 seconds), using your Orange Microsoft account. If Microsoft asks you to sign "
+                    "in, Firefox appears: sign in once and Buddy carries on.")
 
     def page_ask(d):
         d.title("Step 3 - Ask Buddy")
@@ -217,9 +219,6 @@ def show_whats_new(app):
         nxt.pack(side="right")
         if i:
             back.pack(side="right", padx=6)
-        if pages[i] is page_key and not key_ready():
-            check.pack(side="left")
-            settings.pack(side="left", padx=6)
         if pages[i] is page_done:
             guide.pack(side="left")
 

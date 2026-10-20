@@ -74,7 +74,9 @@ class SaltoBrowser:
                      "browser.download.always_ask_before_handling_new_types": False,
                      "browser.helperApps.neverAsk.saveToDisk": _SAVE_MIME, "pdfjs.disabled": True,
                      # intranet names only resolve through the corporate DNS: never use DNS-over-HTTPS
-                     "network.trr.mode": 5}.items():
+                     "network.trr.mode": 5,
+                     # sign in to Microsoft 365 (team key on SharePoint) with the Windows Orange account
+                     "network.http.windows-sso.enabled": True}.items():
             opts.set_preference(k, v)
         self.log("Starting Firefox...")
         self.on_state("starting")
