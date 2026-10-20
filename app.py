@@ -210,9 +210,10 @@ class App:
         def test_key():
             k = key.get().strip()
             if not k or k.startswith("(saved"):
-                k = keystore.unprotect(self.cfg.get("claude_key", ""))
+                k = (keystore.unprotect(self.cfg.get("claude_key", ""))
+                     or config.read_team_key({"team_key_dir": team_dir.get().strip()}))
             if not k:
-                key_state.configure(text="Type a key first")
+                key_state.configure(text="Type a key first (or set the team key folder below)")
                 return
             key_state.configure(text="Checking...")
 
@@ -230,6 +231,48 @@ class App:
                                                      key_state.configure(text="Key removed"))).grid(row=12, column=2,
                                                                                                      pady=(4, 0))
 
+        # team key: one file in a team-only folder, read by everyone's SALTO Buddy
+        ttk.Label(f, text="Team key folder (only Orange staff can open it). Leave your own key empty to use the "
+                          "team key.", style="Muted.TLabel", wraplength=500).grid(row=14, column=0, columnspan=3,
+                                                                                  sticky="w", pady=(10, 0))
+        team_dir = tk.StringVar(value=self.cfg.get("team_key_dir") or config.TEAM_KEY_DIR)
+        ttk.Entry(f, textvariable=team_dir, width=52).grid(row=15, column=0, sticky="ew", pady=(4, 0))
+        ttk.Button(f, text="Browse", command=lambda: team_dir.set(
+            filedialog.askdirectory(initialdir=team_dir.get() or None, parent=w) or team_dir.get())).grid(
+            row=15, column=1, padx=6, pady=(4, 0))
+        team_state = ttk.Label(f, text="", style="Muted.TLabel")
+        team_state.grid(row=16, column=0, columnspan=3, sticky="w")
+
+        def team_status():
+            p = config.team_key_path({"team_key_dir": team_dir.get().strip()})
+            team_state.configure(text=("Team key found" if p and config.read_team_key({"team_key_dir": team_dir.get()})
+                                       else "No team key in this folder" if p else "No team folder set"))
+        team_status()
+        team_dir.trace_add("write", lambda *_a: team_status())
+
+        def save_team_key():
+            k = key.get().strip()
+            if not k or k.startswith("(saved"):
+                k = keystore.unprotect(self.cfg.get("claude_key", ""))
+            folder_ = team_dir.get().strip()
+            if not k or not folder_:
+                messagebox.showinfo(APP_NAME, "Type the key above and choose the team folder first.", parent=w)
+                return
+            path = config.team_key_path({"team_key_dir": folder_})
+            if not messagebox.askyesno(APP_NAME, f"Save the key for everyone who can open:\n{folder_}\n\n"
+                                                 "Anyone with access to this folder can use (and be billed on) this key. "
+                                                 "Continue?", parent=w):
+                return
+            try:
+                os.makedirs(folder_, exist_ok=True)
+                with open(path, "w", encoding="utf-8") as fh:
+                    fh.write(k + "\n")
+            except OSError as exc:
+                messagebox.showerror(APP_NAME, f"Could not write {path}:\n{exc}", parent=w)
+                return
+            team_status()
+        ttk.Button(f, text="Save as team key", command=save_team_key).grid(row=15, column=2, pady=(4, 0))
+
         foot = ttk.Frame(f, style="Card.TFrame")
         foot.grid(row=20, column=0, columnspan=3, sticky="ew", pady=(18, 0))
         ttk.Label(foot, text=f"Version {__version__}  ·  © 2026 Ahmed Walid", style="Muted.TLabel").pack(side="left")
@@ -241,6 +284,7 @@ class App:
             new_key = key.get().strip()
             if new_key and not new_key.startswith("(saved"):
                 self.cfg["claude_key"] = keystore.protect(new_key)
+            self.cfg["team_key_dir"] = "" if team_dir.get().strip() == config.TEAM_KEY_DIR else team_dir.get().strip()
             config.save(self.cfg)
             for feat in self.features:
                 getattr(feat, "key_changed", lambda: None)()

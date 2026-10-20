@@ -16,7 +16,27 @@ DEFAULTS = {
     "downloads": False,        # list attachments; download on demand from the Files tab
     "tab_screenshots": False,
     "show_browser": False,     # Firefox runs hidden in the background
+    # Ask Buddy team key: a folder only Orange staff can open (SharePoint/Teams sync or network share) holding
+    # salto-buddy-team.key. Set TEAM_KEY_DIR below to make it the built-in default for everyone.
+    "team_key_dir": "",
 }
+
+TEAM_KEY_DIR = ""  # e.g. r"\\server\team\SALTO Buddy": the key itself never goes in this repo
+TEAM_KEY_FILE = "salto-buddy-team.key"
+
+
+def team_key_path(cfg):
+    folder = cfg.get("team_key_dir") or TEAM_KEY_DIR
+    return os.path.join(os.path.expandvars(folder), TEAM_KEY_FILE) if folder else ""
+
+
+def read_team_key(cfg):
+    path = team_key_path(cfg)
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
 
 
 def load():

@@ -1,9 +1,10 @@
 """Ask Buddy: chat with Claude about the orders SALTO Buddy has read."""
+import os
 import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from salto import keystore
+from salto import config, keystore
 from ui import theme as T
 
 from .base import Feature
@@ -94,9 +95,12 @@ class AskBuddy(Feature):
     def _ensure_bot(self):
         if self.bot:
             return True
-        key = keystore.unprotect(self.app.cfg.get("claude_key", "")) or __import__("os").environ.get("ANTHROPIC_API_KEY", "")
+        # own key first, then the team key file, then the environment
+        key = (keystore.unprotect(self.app.cfg.get("claude_key", "")) or config.read_team_key(self.app.cfg)
+               or os.environ.get("ANTHROPIC_API_KEY", ""))
         if not key:
-            if messagebox.askyesno("SALTO Buddy", "Ask Buddy needs a Claude API key.\n\nOpen Settings to add it now?"):
+            if messagebox.askyesno("SALTO Buddy", "Ask Buddy needs a Claude API key: your own, or the team key "
+                                                  "(Settings > Ask Buddy > Team key folder).\n\nOpen Settings now?"):
                 self.app.show_settings()
             return False
         from salto.assistant import Assistant
