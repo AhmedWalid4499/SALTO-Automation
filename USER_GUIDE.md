@@ -37,6 +37,22 @@ For every EQP of the order, SALTO Buddy follows the same path you would: EQP > I
 - Ask Buddy can answer it too: 'serial numbers of the devices in creation'.
 - Nothing is ever changed in FLIP: only 'Open Part Request' and 'Export' are used.
 
+## HOTO preparation
+
+The HOTO sheet of a LAN project, filled from the order open in Order explorer: one row per device in creation (devices being ceased or modified are left out).
+
+1. Open the order in Order explorer.
+2. Go to the HOTO preparation tab: the rows are already filled. Serial numbers fill in as soon as FLIP has been read.
+3. Click 'Save HOTO Excel' (saved in the order folder by default), or 'Copy all rows' and paste them into your HOTO document.
+
+- Go Live Date: the case's target delivery date. Change it in Excel if the go-live is planned differently.
+- Project Manager: the case's Project Manager participant, empty when there is none.
+- City, Country, Site address, Site ID and the local contact come from the Site tab (Primary Contact).
+- Device Name is the customer device name; Switch number comes from it (skf-sw-itvil-01_02 -> 01_02). In a stack, member 01 is the Master; the others show their master's name.
+- Device Type: SW, AP, WLC, RTR or FW, from the device type.
+- Device SN#: from FLIP. A highlighted cell means it is missing, or FLIP lists several serial numbers for the device: check it in the FLIP serial numbers tab.
+- Admin and customer IP addresses are not in SALTO: fill them in Excel.
+
 ## Downloads
 
 1. Open the order, then the Files tab.

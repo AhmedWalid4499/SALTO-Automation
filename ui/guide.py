@@ -53,6 +53,25 @@ GUIDE = [
                   "Ask Buddy can answer it too: 'serial numbers of the devices in creation'.",
                   "Nothing is ever changed in FLIP: only 'Open Part Request' and 'Export' are used."]),
     ]),
+    ("HOTO preparation", [
+        ("p", "The HOTO sheet of a LAN project, filled from the order open in Order explorer: one row per device in "
+              "creation (devices being ceased or modified are left out)."),
+        ("steps", ["Open the order in Order explorer.",
+                   "Go to the HOTO preparation tab: the rows are already filled. Serial numbers fill in as soon as FLIP "
+                   "has been read.",
+                   "Click 'Save HOTO Excel' (saved in the order folder by default), or 'Copy all rows' and paste them "
+                   "into your HOTO document."]),
+        ("list", ["Go Live Date: the case's target delivery date. Change it in Excel if the go-live is planned "
+                  "differently.",
+                  "Project Manager: the case's Project Manager participant, empty when there is none.",
+                  "City, Country, Site address, Site ID and the local contact come from the Site tab (Primary Contact).",
+                  "Device Name is the customer device name; Switch number comes from it (skf-sw-itvil-01_02 -> 01_02). "
+                  "In a stack, member 01 is the Master; the others show their master's name.",
+                  "Device Type: SW, AP, WLC, RTR or FW, from the device type.",
+                  "Device SN#: from FLIP. A highlighted cell means it is missing, or FLIP lists several serial "
+                  "numbers for the device: check it in the FLIP serial numbers tab.",
+                  "Admin and customer IP addresses are not in SALTO: fill them in Excel."]),
+    ]),
     ("Downloads", [
         ("steps", ["Open the order, then the Files tab.",
                    "Select the attachments you need (Ctrl+click or Shift+click for several).",
@@ -179,7 +198,10 @@ def show_whats_new(app):
 
     def page_new(d):
         d.title("What's new")
-        for s in ["Much faster: the order appears in about 20 seconds; sub-cases and serial numbers fill in after.",
+        for s in ["New: HOTO preparation - the HOTO sheet of a LAN order, filled for you (devices in creation), "
+                  "ready to save as Excel or paste into your HOTO document.",
+                  "FLIP: every part of an intervention is read now (large orders used to miss some serial numbers).",
+                  "Much faster: the order appears in about 20 seconds; sub-cases and serial numbers fill in after.",
                   "Orders you read before open instantly, and SALTO is signed in as soon as the app starts.",
                   "FLIP serial numbers: for every EQP, SALTO Buddy goes to FLIP and gets each device's serial number.",
                   "Ask Buddy: a chat that answers questions about an order in plain language (serial numbers too).",

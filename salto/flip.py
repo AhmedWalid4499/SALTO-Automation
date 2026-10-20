@@ -173,6 +173,17 @@ def _collect(d, timeout):
     deadline = time.time() + timeout
     while time.time() < deadline and not d.execute_script("return Object.keys(window.__sbWO || {}).length"):
         time.sleep(1)
+    # the whole list in one call: same API FLIP uses, with a page big enough for every part
+    first = next(iter(d.execute_script("return Object.keys(window.__sbWO || {})") or []), "")
+    if first:
+        url = re.sub(r"pageSize=\d+", "pageSize=2000", re.sub(r"pageNumber=\d+", "pageNumber=0", first))
+        body = d.execute_async_script("""const cb = arguments[arguments.length - 1];
+          fetch(arguments[0], {credentials: 'include'}).then(r => r.ok ? r.text() : '').then(cb).catch(() => cb(''));""",
+                                      url)
+        with suppress(ValueError, TypeError):
+            if isinstance(json.loads(body), list):
+                d.execute_script("window.__sbWO[arguments[0]] = arguments[1];", url, body)
+                return _parts(d)
     for _ in range(10):  # next pages (FLIP sometimes repeats page 1: stop when nothing new comes)
         n_before = d.execute_script("return Object.keys(window.__sbWO).length")
         clicked = d.execute_script(r"""
@@ -186,6 +197,11 @@ def _collect(d, timeout):
         t = time.time()
         while time.time() - t < 8 and d.execute_script("return Object.keys(window.__sbWO).length") == n_before:
             time.sleep(0.5)
+    return _parts(d)
+
+
+def _parts(d):
+    """Every part from the captured answers, once each."""
     parts = {}
     for body in (d.execute_script("return window.__sbWO") or {}).values():
         with suppress(ValueError):
@@ -220,20 +236,27 @@ def part_row(p):
 def match(devices, parts):
     """Serial number of each SALTO device: its FLIP part with the device's model (the device itself)."""
     rows = [part_row(p) for p in parts]
+    usable = [r for r in rows if "CANCEL" not in r["Status"].upper()]
     out = []
     for dev in devices:
-        # the device's own part request (from the rocket) is exact; FLIP's router name can be wrong
-        mine = [r for r in rows if dev.get("Part request") and norm(r["Request"]) == norm(dev["Part request"])] or \
-               [r for r in rows if norm(r["Device"]) == norm(dev["Device"])]
-        main = [r for r in mine if _model_matches(r["Part number"], dev["Model"])] or \
-               [r for r in mine if r["Revision"].upper().endswith("-RF")]
-        hit = main[0] if main else {}
+        # the device's own part request (from the rocket) when it is the device itself (FLIP's router name can
+        # be wrong), else the parts FLIP lists under the device name
+        by_request = [r for r in usable if dev.get("Part request") and norm(r["Request"]) == norm(dev["Part request"])]
+        by_name = [r for r in usable if norm(r["Device"]) == norm(dev["Device"])]
+        main = [r for r in by_request if _model_matches(r["Part number"], dev["Model"])] or \
+               [r for r in by_name if _model_matches(r["Part number"], dev["Model"])] or \
+               [r for r in by_name if r["Revision"].upper().endswith("-RF")]
+        hit = dict(main[0]) if main else {}
+        serials = list(dict.fromkeys(r["Serial number"] for r in main if r["Serial number"]))
+        if len(serials) > 1:  # FLIP cannot tell which one: show them all
+            hit["Serial number"] = " / ".join(serials)
         out.append({"EQP": dev["EQP"], "Device (OBS name)": dev["Device"], "CDC": dev["CDC"], "USID": dev["USID"],
                     "Model": dev["Model"], "Serial number": hit.get("Serial number", ""),
                     "FLIP part number": hit.get("Part number", ""), "FLIP status": hit.get("Status", ""),
                     "Condition": hit.get("Condition", ""), "Part request": hit.get("Request", ""),
                     "Intervention": dev["Intervention"],
-                    "Check": ("OK" if len(main) == 1 else f"{len(main)} matching parts - check" if main
+                    "Check": ("OK" if len(main) == 1 or len(serials) == 1 else f"{len(main)} matching parts - check"
+                              if main
                               else "no matching device part in FLIP")})
     return out, rows
 

@@ -202,6 +202,13 @@ class OrderExplorer(Feature):
         self._subcases_page()
         self._files_page()
         self.tabs.select(current)
+        self._notify()
+
+    def _notify(self):
+        """Tell the other features (HOTO preparation...) that the order on screen changed."""
+        for feat in self.app.features:
+            if feat is not self:
+                getattr(feat, "order_updated", lambda rep: None)(self.rep)
 
     def _set_title(self, rep, note=""):
         case = rep.case
@@ -305,6 +312,7 @@ class OrderExplorer(Feature):
         errors = [e for c in case.walk() for e in c.errors]
         if errors:
             self.app.log("Could not read: " + "; ".join(errors))
+        self._notify()
 
     def _attachments(self):
         if not self.rep or not self.rep.case:

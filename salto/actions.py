@@ -218,7 +218,13 @@ def order_lookup(b: SaltoBrowser, order_ref: str, base_dir: str = "", full: bool
     if not rep.rows:
         b.log("No STC found for this order.")
         return rep
-    rep.stc_id = rep.rows[0].stc_id
+    # an order can have a withdrawn/cancelled STC listed before the live one: open the live one
+    dead = re.compile(r"withdrawn|cancel", re.I)
+    live = [r for r in rep.rows if not any(dead.search(c) for c in r.cells)]
+    rep.stc_id = (live or rep.rows)[0].stc_id
+    others = sorted({r.stc_id for r in rep.rows} - {rep.stc_id})
+    if others:
+        b.log(f"Other STC(s) for this order: {', '.join(others)}")
     if base_dir:
         rep.folder = files.order_folder(base_dir, order_ref, rep.stc_id)
     open_case(b, rep.stc_id)
