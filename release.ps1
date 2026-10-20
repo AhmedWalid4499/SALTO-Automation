@@ -27,11 +27,18 @@ if (-not (Test-Path $setup)) { throw "Installer not found: $setup" }
 
 git add -A
 git diff --cached --quiet
-if ($LASTEXITCODE -ne 0) { git commit -m "Release $tag" -m $Notes }   # skip if already committed
+if ($LASTEXITCODE -ne 0) {   # skip if already committed
+    $msgTmp = Join-Path $env:TEMP "salto-buddy-commit.txt"
+    Set-Content -Path $msgTmp -Value "Release $tag`n`n$Notes" -Encoding utf8
+    git commit -F $msgTmp
+}
 git tag $tag
 git push origin HEAD --tags
 if ($LASTEXITCODE -ne 0) { throw "git push failed" }
 
-gh release create $tag $setup --title "SALTO Buddy $version" --notes $Notes --latest
+# notes go through a file: Windows PowerShell mangles quotes inside arguments to native programs
+$notesTmp = Join-Path $env:TEMP "salto-buddy-notes-$version.md"
+Set-Content -Path $notesTmp -Value $Notes -Encoding utf8
+gh release create $tag $setup --title "SALTO Buddy $version" --notes-file $notesTmp --latest
 if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
 Write-Host "Released $tag" -ForegroundColor Green
