@@ -213,6 +213,7 @@ class App:
                                        ("subcases", "Open every sub-case (EQP, CONF, SG, INV...)"),
                                        ("downloads", "Download all attachments automatically while reading"),
                                        ("tab_screenshots", "Screenshot every tab while reading"),
+                                       ("flip", "Get serial numbers from FLIP for EQPs"),
                                        ("check_updates_on_start", "Check for updates when SALTO Buddy starts")]):
             opts[k] = tk.BooleanVar(value=self.cfg.get(k, config.DEFAULTS.get(k, True)))
             ttk.Checkbutton(f, text=text, variable=opts[k]).grid(row=4 + i, column=0, columnspan=3, sticky="w", pady=2)

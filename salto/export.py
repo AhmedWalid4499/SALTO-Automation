@@ -124,6 +124,17 @@ def export_report(rep, path):
                     s.table(g.headers, g.rows)
             s.finish()
 
+        eqps = [c for c in case.walk() if c.stc_id.startswith("EQP-")]
+        serials = [r for c in eqps for r in c.flip.get("serials", [])]
+        if serials:
+            s = _Sheet(wb, "FLIP serial numbers", "FLIP serial numbers", note)
+            s.table(["Device (OBS name)", "Serial number", "Model", "FLIP part number", "CDC", "USID", "FLIP status",
+                     "Condition", "EQP", "Intervention", "Part request", "Check"], serials, freeze=True)
+            s.section("All FLIP parts")
+            s.table(["EQP", "Device", "Part number", "Serial number", "Description", "Status", "Condition", "Request",
+                     "Type", "Revision", "Created"], [dict(p, EQP=c.stc_id) for c in eqps for p in c.flip.get("parts", [])])
+            s.finish()
+
         s = _Sheet(wb, "Participants", "Participants", note)
         s.table(["Case", "Name", "Role", "Party"],
                 [[c.stc_id, p.name, p.role, p.party] for c in case.walk() for p in c.participants], freeze=True)

@@ -17,12 +17,23 @@ The top of the page shows the order, its stage bar (green done, blue current, gr
 
 - Summary: the key facts - status, stage, dates, scope of work, people, sub-cases.
 - Devices: the TS tab - switch between 'Scope of work' and 'All devices'.
+- FLIP serial numbers: the serial number of every EQP device, read from FLIP.
 - People: every participant of the case and its sub-cases.
 - Case tabs: SALTO's own tabs of the main case (Overview, Site, Information...).
 - Sub-cases: pick EQP, CONF, SG, INV... on the left; its tabs appear as buttons.
 - Files: attachments (download what you need) and your screenshots.
 
 Tables: click a column title to sort, Ctrl+C or right-click to copy rows into Excel.
+
+## FLIP serial numbers
+
+For every EQP of the order, SALTO Buddy follows the same path you would: EQP > Information > rocket > Intervention Id > FLIP > Work Flow Action Items > Open Part Request > Export. It then matches each SALTO device to its FLIP part with the same OBS name and the device model, so you get the serial number of the device itself (not its power supplies or SFPs).
+
+- FLIP serial numbers tab: one row per device with its serial number, and below it every FLIP part.
+- Check column: OK when exactly one part matched; otherwise it tells you what to look at.
+- The FLIP export (Excel) is saved in the order folder, Downloads\FLIP.
+- Ask Buddy can answer it too: 'serial numbers of the devices in creation'.
+- Nothing is ever changed in FLIP: only 'Open Part Request' and 'Export' are used.
 
 ## Downloads
 

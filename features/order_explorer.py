@@ -70,7 +70,7 @@ class OrderExplorer(Feature):
         self.tabs = ttk.Notebook(parent, style="Inner.TNotebook")
         self.tabs.pack(fill="both", expand=True, pady=(12, 0))
         self.pages = {}
-        for name in ["Summary", "Devices", "People", "Case tabs", "Sub-cases", "Files"]:
+        for name in ["Summary", "Devices", "FLIP serial numbers", "People", "Case tabs", "Sub-cases", "Files"]:
             f = tk.Frame(self.tabs, bg=T.CARD)
             self.tabs.add(f, text=name)
             self.pages[name] = f
@@ -117,7 +117,7 @@ class OrderExplorer(Feature):
         self._callback = callback
         cfg = self.app.cfg
         opts = Options(subcases=cfg.get("subcases", True), downloads=cfg.get("downloads", False),
-                       tab_screenshots=cfg.get("tab_screenshots", False))
+                       tab_screenshots=cfg.get("tab_screenshots", False), flip=cfg.get("flip", True))
         self.app.log(f"--- Opening {ref} ---")
         self.app.busy(True, f"Opening {ref}...")
         self.progress.pack(fill="x", pady=(8, 0), after=self.title_lbl.master)
@@ -217,6 +217,7 @@ class OrderExplorer(Feature):
             return
         self._summary_page()
         self._devices_page()
+        self._flip_page()
         self._people_page()
         self._case_tabs_page()
         self._subcases_page()
@@ -252,6 +253,11 @@ class OrderExplorer(Feature):
             d.fields([(f"{n.node}", "   ".join(f"{k.replace('Number of Devices to be ', '').capitalize()}: {v}"
                                                for k, v in n.counts) or "—")])
         d.fields([("Devices in scope", str(len(case.scope_devices))), ("Devices on site", str(len(case.all_devices)))])
+        serials = [s for c in case.walk() if c.stc_id.startswith("EQP-") for s in c.flip.get("serials", [])]
+        if serials:
+            d.section("Serial numbers (FLIP)")
+            d.fields([(s["Device (OBS name)"], f"{s['Serial number'] or '—'}   ({s['Model']}, {s['EQP']})")
+                      for s in serials])
         d.section("People")
         d.fields([(p.role or p.party, p.name) for p in case.participants])
         if case.subcases:
@@ -293,6 +299,50 @@ class OrderExplorer(Feature):
         render("Scope")
 
     # ---- People
+    # ---- FLIP serial numbers (EQP sub-cases)
+    def _flip_page(self):
+        case = self.rep.case
+        self._clear("FLIP serial numbers")
+        page = self.pages["FLIP serial numbers"]
+        eqps = [c for c in case.walk() if c.stc_id.startswith("EQP-")]
+        serials = [s for c in eqps for s in c.flip.get("serials", [])]
+        parts = [dict(p, EQP=c.stc_id) for c in eqps for p in c.flip.get("parts", [])]
+        exports = [x for c in eqps for x in c.flip.get("exports", [])]
+        errors = [e for c in eqps for e in c.flip.get("errors", [])]
+        if not serials:
+            d = DetailView(page)
+            d.pack(fill="both", expand=True)
+            d.title("FLIP serial numbers", "From FLIP: EQP > Information > rocket > Intervention > Open Part Request")
+            d.note_body("No EQP sub-case was read for this order." if not eqps else
+                        "FLIP was not read (turn on 'Get serial numbers from FLIP for EQPs' in Settings)."
+                        if not self.app.cfg.get("flip", True) else "No serial numbers could be read from FLIP.")
+            for e in errors:
+                d.note(e)
+            return
+        # devices: sized to their rows; the parts list below takes the remaining space
+        top, low = tk.Frame(page, bg=T.CARD), tk.Frame(page, bg=T.CARD)
+        top.pack(fill="x", padx=10, pady=(10, 0))
+        low.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        head = tk.Frame(top, bg=T.CARD)
+        head.pack(fill="x", pady=(0, 4))
+        found = sum(1 for s in serials if s["Serial number"])
+        tk.Label(head, text=f"Devices ({found} of {len(serials)} with a serial number)", bg=T.CARD, fg=T.ORANGE,
+                 font=T.F_SECTION).pack(side="left")
+        if exports:
+            ttk.Button(head, text="Open FLIP export", command=lambda: os.startfile(exports[0])).pack(side="right")
+        tk.Label(top, text="Each SALTO device matched to its FLIP part with the same OBS name and the device model "
+                           "(the device itself, not its power supplies or SFPs).", bg=T.CARD, fg=T.MUTED,
+                 font=T.F_SMALL, anchor="w").pack(fill="x", pady=(0, 6))
+        Table(top, ["Device (OBS name)", "Serial number", "Model", "FLIP part number", "CDC", "USID", "FLIP status",
+                    "Condition", "EQP", "Intervention", "Part request", "Check"], serials,
+              height=min(len(serials), 8)).pack(fill="x")
+        tk.Label(low, text=f"All FLIP parts ({len(parts)})", bg=T.CARD, fg=T.ORANGE, font=T.F_SECTION,
+                 anchor="w").pack(fill="x", pady=(8, 4))
+        Table(low, ["Device", "Part number", "Serial number", "Description", "Status", "Condition", "Request",
+                    "Type", "EQP"], parts, height=10).pack(fill="both", expand=True)
+        for e in errors:
+            tk.Label(low, text=e, bg=T.CARD, fg=T.RED, font=T.F_SMALL, anchor="w").pack(fill="x")
+
     def _people_page(self):
         case = self.rep.case
         self._clear("People")

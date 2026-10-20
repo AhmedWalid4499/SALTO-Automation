@@ -143,6 +143,12 @@ class SaltoBrowser:
             if not self._on_salto() and self._choose_professional_account():
                 time.sleep(3)
                 continue
+            if self._on_salto() and self._pega_error_page():
+                # Pega's "There has been an issue" after an interrupted sign-in hand-off: open SALTO again
+                self.log("SALTO showed an error page after sign-in; opening it again...")
+                self._open_salto(timeout)
+                time.sleep(3)
+                continue
             if not self._on_salto():
                 stuck_since = stuck_since or time.time()
                 if self.headless and time.time() - stuck_since > 20:
@@ -175,6 +181,13 @@ class SaltoBrowser:
                     self.on_state("offline-network")
                     warned = True
                 time.sleep(10)
+
+    def _pega_error_page(self):
+        try:
+            return "There has been an issue" in (self.driver.execute_script(
+                "return document.body ? document.body.innerText.slice(0, 500) : ''") or "")
+        except WebDriverException:
+            return False
 
     def _choose_professional_account(self):
         """On the Orange Connect page, pick the professional-account option.

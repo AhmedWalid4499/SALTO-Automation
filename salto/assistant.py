@@ -12,7 +12,7 @@ import threading
 import anthropic
 
 MODEL = "claude-opus-5-5"
-PARTS = ["summary", "devices", "people", "case_tabs", "subcases", "attachments", "audit", "search"]
+PARTS = ["summary", "devices", "serial_numbers", "people", "case_tabs", "subcases", "attachments", "audit", "search"]
 
 SYSTEM = """You are Buddy, the assistant inside SALTO Buddy, a desktop tool used by Orange Business delivery staff \
 (DPMs, STMs, order managers). SALTO is Orange's Pega-based service transition tool. A GOLD order (e.g. 10-1764901) \
@@ -24,8 +24,9 @@ How to answer:
 - Get the facts with the tools; never answer from memory or guess a value. Fetch only the parts you need.
 - If the user names no order, use the order currently open in the app (given with their message).
 - If an order is not loaded, call open_order (it takes a few minutes); say so briefly first.
-- If SALTO has no such field (for example no serial number), say that plainly and offer the closest fields that do \
-exist (device Name, USID, Customer Defined Code, Model...).
+- Serial numbers come from FLIP (part serial_numbers): each SALTO device of an EQP matched to its FLIP part by OBS \
+name and model. Accessories (power supplies, SFPs) have their own serials in the parts list. If FLIP gave none, say so.
+- If a field exists nowhere, say that plainly and offer the closest fields that do exist (device Name, USID, Model...).
 - Where the data comes from matters: say which case and tab you took it from, e.g. "Site tab of MLAN-215851".
 - Device lists: the TS tab has, per product node, the devices in scope of work and all devices on the site; \
 "in creation / added" means Cycle = Creation, "ceased / removed" means Cycle = Cessation.
@@ -37,7 +38,8 @@ TOOLS = [
         "name": "get_order",
         "description": ("Read data of an order that is already opened in SALTO Buddy. Parts: summary (status, stage, "
                         "dates, product, EQPs, sub-case list), devices (TS: scope-of-work and all devices per node, "
-                        "with counts), people (participants of every case), case_tabs (every tab of the main case: "
+                        "with counts), serial_numbers (FLIP: serial number of each EQP device, plus every FLIP part "
+                        "with its serial), people (participants of every case), case_tabs (every tab of the main case: "
                         "Site/address/contacts, Information/dates, Commercial Content, Overview tree...), subcases "
                         "(every sub-case with its stages, people and tabs, e.g. EQP equipment details), attachments, "
                         "audit (history), search (STC Search rows). Returns JSON."),
@@ -104,6 +106,11 @@ def order_part(rep, part):
         return [{"node": f"{n.product} > {n.node}", "counts": dict(n.counts),
                  "scope_of_work_devices": n.devices.rows,
                  "all_devices": n.all_devices.rows if n.all_devices else []} for n in case.scope]
+    if part == "serial_numbers":
+        eqps = [c for c in case.walk() if c.stc_id.startswith("EQP-")]
+        return {"devices": [s for c in eqps for s in c.flip.get("serials", [])],
+                "all_flip_parts": [dict(p, EQP=c.stc_id) for c in eqps for p in c.flip.get("parts", [])],
+                "errors": [e for c in eqps for e in c.flip.get("errors", [])] or None}
     if part == "people":
         return [{"case": c.stc_id, "type": c.title,
                  "people": [{"name": p.name, "role": p.role or p.party} for p in c.participants]} for c in case.walk()]

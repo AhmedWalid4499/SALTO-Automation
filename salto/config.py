@@ -15,6 +15,7 @@ DEFAULTS = {
     "subcases": True,
     "downloads": False,        # list attachments; download on demand from the Files tab
     "tab_screenshots": False,
+    "flip": True,              # FLIP serial numbers for EQP sub-cases
     "show_browser": False,     # Firefox runs hidden in the background
     # Ask Buddy team key: a folder only Orange staff can open (SharePoint/Teams sync or network share) holding
     # salto-buddy-team.key. Set TEAM_KEY_DIR below to make it the built-in default for everyone.

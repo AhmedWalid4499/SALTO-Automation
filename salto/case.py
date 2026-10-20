@@ -60,6 +60,7 @@ class Options:
     subcases: bool = True
     downloads: bool = True
     tab_screenshots: bool = False
+    flip: bool = True         # FLIP serial numbers for EQP sub-cases
     folder: str = ""          # order folder (Downloads/ and Screenshots/ go inside)
 
 
@@ -75,6 +76,7 @@ class CaseData:
     attachments: list = field(default_factory=list)  # dicts incl. 'Saved as'
     screenshots: list = field(default_factory=list)
     subcases: list = field(default_factory=list)     # [CaseData]
+    flip: dict = field(default_factory=dict)         # EQP only: {'serials', 'parts', 'exports', 'errors'}
     errors: list = field(default_factory=list)
 
     @property
@@ -535,6 +537,16 @@ def read_case(b: SaltoBrowser, case_id: str, opts: Options = None, log=print, re
             msg = f"{case_id} / {name}: {str(exc).splitlines()[0][:120]}"
             log("  could not read " + msg)
             data.errors.append(msg)
+            with suppress(WebDriverException):
+                enter_case(b, case_id, timeout=15)
+
+    if opts.flip and case_id.startswith("EQP-"):  # equipment: serial numbers from FLIP
+        from . import flip
+        try:
+            data.flip = flip.read_eqp(b, case_id, opts.folder, log)
+            data.errors += data.flip.get("errors", [])
+        except WebDriverException as exc:
+            data.errors.append(f"{case_id} / FLIP: {str(exc).splitlines()[0][:120]}")
             with suppress(WebDriverException):
                 enter_case(b, case_id, timeout=15)
 
