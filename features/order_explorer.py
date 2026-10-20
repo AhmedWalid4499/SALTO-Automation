@@ -102,10 +102,19 @@ class OrderExplorer(Feature):
         os.startfile(self._folder())
 
     # ------------------------------------------------------------ actions
-    def go(self):
+    def open_for_chat(self, ref, callback):
+        """Ask Buddy's open_order tool: read an order here, then callback(rep, error)."""
+        if str(self.open_btn.cget("state")) == "disabled":
+            callback(None, RuntimeError("SALTO Buddy is already reading an order; try again when it is done"))
+            return
+        self.order.set(ref)
+        self.go(callback)
+
+    def go(self, callback=None):
         ref = self.order.get().strip()
         if not ref or str(self.open_btn.cget("state")) == "disabled":
             return
+        self._callback = callback
         cfg = self.app.cfg
         opts = Options(subcases=cfg.get("subcases", True), downloads=cfg.get("downloads", False),
                        tab_screenshots=cfg.get("tab_screenshots", False))
@@ -125,6 +134,10 @@ class OrderExplorer(Feature):
     def failed(self, exc):
         self._done_busy()
         self.title_lbl.configure(text="")
+        cb, self._callback = getattr(self, "_callback", None), None
+        if cb:  # opened from Ask Buddy: the chat reports the error
+            cb(None, exc)
+            return
         messagebox.showerror("SALTO Buddy", f"Opening the order failed: {str(exc).splitlines()[0]}\n\n"
                                             "Click 'Show activity' at the bottom for details.")
 
@@ -176,6 +189,11 @@ class OrderExplorer(Feature):
     def show(self, rep):
         self._done_busy()
         self.rep = rep
+        if rep.stc_id:
+            self.app.reports[rep.order_ref] = rep  # shared with Ask Buddy
+        cb, self._callback = getattr(self, "_callback", None), None
+        if cb:
+            cb(rep, None)
         case = rep.case
         customer = ""
         if case:

@@ -13,7 +13,7 @@ from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
 from features import FEATURES
-from salto import config, updater
+from salto import config, keystore, updater
 from salto.version import APP_NAME, __version__
 from salto.worker import BrowserWorker
 from ui import theme as T
@@ -57,11 +57,15 @@ class App:
 
         self.worker = BrowserWorker(log=self.log, on_state=lambda s: self.ui(lambda: self._set_state(s)),
                                     visible=self.cfg.get("show_browser", False))
+        self.reports = {}      # order_ref -> OrderReport read this session (shared by the features)
+        self.explorer = None   # the Order explorer feature (Ask Buddy opens orders through it)
         self.features = []
         for cls in FEATURES:
             page = ttk.Frame(self.tabs, style="Card.TFrame", padding=(16, 12))
             self.tabs.add(page, text=cls.title)
             f = cls(self)
+            if cls.__name__ == "OrderExplorer":
+                self.explorer = f
             f.build(page)
             self.features.append(f)
 
@@ -185,15 +189,61 @@ class App:
             opts[k] = tk.BooleanVar(value=self.cfg.get(k, config.DEFAULTS.get(k, True)))
             ttk.Checkbutton(f, text=text, variable=opts[k]).grid(row=4 + i, column=0, columnspan=3, sticky="w", pady=2)
         f.columnconfigure(0, weight=1)
+
+        # Ask Buddy: Claude API key, stored encrypted for this Windows user (DPAPI)
+        ttk.Label(f, text="Ask Buddy", style="Section.TLabel").grid(row=10, column=0, columnspan=3, sticky="w", pady=(16, 4))
+        ttk.Label(f, text="Claude API key (from console.anthropic.com). Questions and the order data they need are "
+                          "sent to Anthropic.", style="Muted.TLabel", wraplength=500).grid(row=11, column=0, columnspan=3,
+                                                                                           sticky="w")
+        has_key = bool(keystore.unprotect(self.cfg.get("claude_key", "")))
+        key = tk.StringVar()
+        key_entry = ttk.Entry(f, textvariable=key, show="•", width=52)
+        key_entry.grid(row=12, column=0, sticky="ew", pady=(4, 0))
+        if has_key:
+            key_entry.insert(0, "(saved - type a new key to replace it)")
+            key_entry.configure(show="")
+            key_entry.bind("<FocusIn>", lambda e: (key.set("") if key.get().startswith("(saved") else None,
+                                                   key_entry.configure(show="•")))
+        key_state = ttk.Label(f, text="Key saved" if has_key else "No key yet", style="Muted.TLabel")
+        key_state.grid(row=13, column=0, columnspan=3, sticky="w")
+
+        def test_key():
+            k = key.get().strip()
+            if not k or k.startswith("(saved"):
+                k = keystore.unprotect(self.cfg.get("claude_key", ""))
+            if not k:
+                key_state.configure(text="Type a key first")
+                return
+            key_state.configure(text="Checking...")
+
+            def work():
+                from salto.assistant import check_key
+                try:
+                    check_key(k)
+                    msg = "Key works"
+                except Exception as exc:
+                    msg = f"Key check failed: {str(exc).splitlines()[0][:90]}"
+                self.ui(lambda: key_state.configure(text=msg))
+            threading.Thread(target=work, daemon=True).start()
+        ttk.Button(f, text="Test", command=test_key).grid(row=12, column=1, padx=6, pady=(4, 0))
+        ttk.Button(f, text="Remove", command=lambda: (key.set(""), self.cfg.update(claude_key=""),
+                                                     key_state.configure(text="Key removed"))).grid(row=12, column=2,
+                                                                                                     pady=(4, 0))
+
         foot = ttk.Frame(f, style="Card.TFrame")
-        foot.grid(row=10, column=0, columnspan=3, sticky="ew", pady=(18, 0))
+        foot.grid(row=20, column=0, columnspan=3, sticky="ew", pady=(18, 0))
         ttk.Label(foot, text=f"Version {__version__}  ·  © 2026 Ahmed Walid", style="Muted.TLabel").pack(side="left")
 
         def save():
             self.cfg["export_dir"] = folder.get().strip() or config.DEFAULTS["export_dir"]
             for k, v in opts.items():
                 self.cfg[k] = bool(v.get())
+            new_key = key.get().strip()
+            if new_key and not new_key.startswith("(saved"):
+                self.cfg["claude_key"] = keystore.protect(new_key)
             config.save(self.cfg)
+            for feat in self.features:
+                getattr(feat, "key_changed", lambda: None)()
             for feat in self.features:
                 getattr(feat, "settings_changed", lambda: None)()
             w.destroy()
