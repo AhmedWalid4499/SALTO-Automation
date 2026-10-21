@@ -10,7 +10,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from salto import cache, capture, config, errors, files
 from salto.actions import order_lookup, read_stages
-from salto.case import Options, download_attachments, read_subcases
+from salto.case import Options, download_attachments, other_lines, read_subcases
 from salto.export import export_report
 from ui import theme as T
 from ui.widgets import DetailView, Segmented, StatusCard, Stepper, Table, ThinProgress
@@ -511,7 +511,7 @@ class OrderExplorer(Feature):
 
         def render(name):
             detail.clear()
-            if name == "Stages & people":
+            if name == "Stages, people & Pulse":
                 detail.title(f"{c.stc_id} · {c.title}", _stage_text(c))
                 if c.stages:
                     detail.section("Stages")
@@ -522,12 +522,18 @@ class OrderExplorer(Feature):
                 if c.participants:
                     detail.section("People")
                     detail.fields([(p.role or p.party, p.name) for p in c.participants])
+                if getattr(c, "pulse", None):
+                    detail.section(f"Pulse ({len(c.pulse)} message(s))")
+                    detail.table(["Date", "Author", "Message", "Replies"],
+                                 [{"Date": p["date"], "Author": p["author"], "Message": p["text"],
+                                   "Replies": " | ".join(p.get("replies", []))} for p in c.pulse])
                 for e in c.errors:
                     detail.note("Could not read: " + e)
                 return
             td = c.tabs[name]
             detail.title(name, f"{c.stc_id} · {c.title}")
-            if not td.sections and not td.grids:
+            other = other_lines(td)
+            if not td.sections and not td.grids and not other:
                 detail.note("SALTO shows nothing in this tab.")
             for sec, fs in td.sections:
                 detail.section(sec.title() if sec.isupper() else sec)
@@ -535,8 +541,11 @@ class OrderExplorer(Feature):
             for g in td.grids:
                 detail.section(f"{g.name if g.name and g.name != 'General' else name} ({len(g.rows)})")
                 detail.table(g.headers, g.rows)
+            if other:  # shown in SALTO but not laid out as fields or a table (e.g. Services)
+                detail.section("Other information on this tab" if td.sections or td.grids else "Information")
+                detail.note_body("\n".join(other))
 
-        names = ["Stages & people"] + list(c.tabs)
+        names = ["Stages, people & Pulse"] + list(c.tabs)
         Segmented(top, names, render).pack(side="left")
         render(names[0])
 

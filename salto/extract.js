@@ -21,6 +21,14 @@ function sectionOf(el) {
 // ---- label/value fields
 const sections = [];
 const byName = {};
+const taken = [];  // value elements already read with a label
+const valueOf = el => {
+  const input = el.querySelector('input:not([type=hidden]),select,textarea');
+  if (input && input.tagName === 'SELECT') return clean(input.options[input.selectedIndex] && input.options[input.selectedIndex].text);
+  if (input && input.type === 'checkbox') return input.checked ? 'Yes' : 'No';
+  if (input) return clean(input.value);
+  return clean(el.innerText || el.textContent);
+};
 root.querySelectorAll('.field-caption, .dataLabelForRead').forEach(cap => {
   if (!vis(cap) || cap.closest('table.gridTable')) return;
   const label = clean(cap.textContent);
@@ -36,6 +44,22 @@ root.querySelectorAll('.field-caption, .dataLabelForRead').forEach(cap => {
   const sec = sectionOf(cap);
   if (!byName[sec]) { byName[sec] = {name: sec, fields: []}; sections.push(byName[sec]); }
   byName[sec].fields.push([label, v]);
+  taken.push(val, cap.parentElement);
+});
+
+// ---- values without a label of their own (e.g. "Provisioning Notes" text under its heading):
+// kept under the heading's name
+root.querySelectorAll('.content-field.dataValueRead, .content-field.dataValueWrite').forEach(f => {
+  if (!vis(f) || f.closest('table.gridTable') || f.querySelector('.field-caption, .dataLabelForRead, table.gridTable')) return;
+  if (taken.some(t => t && (t.contains(f) || f.contains(t)))) return;
+  if (f.querySelector('a, button') && !f.querySelector('textarea, input, select') && clean(f.innerText).length < 40) return;  // a link/button
+  const v = valueOf(f);
+  if (!v || EMPTY.test(v)) return;
+  const sec = sectionOf(f);
+  if (!byName[sec]) { byName[sec] = {name: sec, fields: []}; sections.push(byName[sec]); }
+  if (byName[sec].fields.some(x => x[1] === v)) return;
+  byName[sec].fields.push([sec === 'General' ? 'Note' : sec, v]);
+  taken.push(f);
 });
 
 // ---- grids (Pega gridTable); header names from data-attribute-name or the <th> row

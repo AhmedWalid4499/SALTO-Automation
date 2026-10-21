@@ -7,6 +7,8 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
+from .case import other_lines
+
 HEAD_FILL = PatternFill("solid", fgColor="FF7900")
 HEAD_FONT = Font(bold=True, color="FFFFFF")
 TITLE_FONT = Font(bold=True, size=14)
@@ -153,6 +155,10 @@ def export_report(rep, path):
             if c.participants:
                 s.section("Participants")
                 s.fields([(p.role or p.party, p.name) for p in c.participants])
+            if getattr(c, "pulse", None):
+                s.section("Pulse (messages)")
+                s.table(["Date", "Author", "Message", "Replies"],
+                        [[p["date"], p["author"], p["text"], "\n".join(p.get("replies", []))] for p in c.pulse])
             for name, td in c.tabs.items():
                 for sec, fs in td.sections:
                     s.section(f"{name} · {sec}")
@@ -160,6 +166,10 @@ def export_report(rep, path):
                 for g in td.grids:
                     s.section(f"{name} · {g.name}")
                     s.table(g.headers, g.rows)
+                other = other_lines(td)
+                if other:
+                    s.section(f"{name} · other information")
+                    s.fields([("", line) for line in other])
             s.finish()
 
     s = _Sheet(wb, "Search results", "STC Search results", note)

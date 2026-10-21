@@ -11,6 +11,8 @@ import threading
 
 import anthropic
 
+from .case import other_lines
+
 MODEL = "claude-opus-5-5"
 PARTS = ["summary", "devices", "serial_numbers", "people", "case_tabs", "subcases", "attachments", "audit", "search"]
 
@@ -27,6 +29,10 @@ How to answer:
 - Serial numbers come from FLIP (part serial_numbers): each SALTO device of an EQP matched to its FLIP part by OBS \
 name and model. Accessories (power supplies, SFPs) have their own serials in the parts list. If FLIP gave none, say so.
 - Emails, job titles and managers of people come from the Orange Business Org Chart: part people has them for the order's participants once looked up (org_chart); for anyone else, or for a manager's manager, call find_person. Customer contacts (e.g. @skf.com) are not in the Org Chart: their email is in the Site / Commercial Content tabs.
+- "pulse" (in summary, case_tabs and subcases) holds the messages people posted on a case (author, date, text, \
+replies): use it for questions about notes, comments, what was discussed or changed.
+- A tab's "other_text" is information SALTO shows on that tab outside fields and tables (e.g. Services); always \
+check it before saying something is not in SALTO.
 - If a field exists nowhere, say that plainly and offer the closest fields that do exist (device Name, USID, Model...).
 - Where the data comes from matters: say which case and tab you took it from, e.g. "Site tab of MLAN-215851".
 - Device lists: the TS tab has, per product node, the devices in scope of work and all devices on the site; \
@@ -105,8 +111,12 @@ TOOLS = [
 
 # ---------------------------------------------------------------- order data -> JSON
 def _tab_dict(td):
-    return {"sections": {s: dict(f) for s, f in td.sections},
-            "tables": [{"name": g.name, "rows": g.rows} for g in td.grids]}
+    out = {"sections": {s: dict(f) for s, f in td.sections},
+           "tables": [{"name": g.name, "rows": g.rows} for g in td.grids]}
+    other = other_lines(td)
+    if other:  # shown in SALTO but not as fields/tables (unusual layouts, e.g. Services)
+        out["other_text"] = other
+    return out
 
 
 def _case_dict(c, with_tabs=True, skip=("Audit",)):
@@ -114,6 +124,8 @@ def _case_dict(c, with_tabs=True, skip=("Audit",)):
          "stages": [f"{s.name}: {s.state}" for s in c.stages],
          "header": dict(c.header),
          "people": [{"name": p.name, "role": p.role or p.party} for p in c.participants]}
+    if getattr(c, "pulse", None):  # messages posted on the case (Pulse)
+        d["pulse"] = c.pulse
     if with_tabs:
         d["tabs"] = {n: _tab_dict(t) for n, t in c.tabs.items() if n not in skip and n != "TS"}
     return d

@@ -5,6 +5,7 @@ Functions expect the driver to be switched into the case's frame
 (actions.open_case / open_subcase leave it there).
 """
 import base64
+import json
 import os
 import re
 import time
@@ -46,6 +47,7 @@ class ScopeNode:
     counts: list          # [(label, value)] e.g. Number of Devices to be added
     devices: Grid         # 'Scope of work only' ticked
     all_devices: Grid = None
+    extra: list = field(default_factory=list)  # other tables shown with the devices (EQUIPMENT INFORMATION...)
 
 
 @dataclass
@@ -81,6 +83,7 @@ class CaseData:
     subcases: list = field(default_factory=list)     # [CaseData]
     flip: dict = field(default_factory=dict)         # EQP only: {'serials', 'parts', 'exports', 'errors'}
     pending_subs: list = field(default_factory=list)  # sub-case ids still to read (read_subcases)
+    pulse: list = field(default_factory=list)        # Pulse posts: {author, date, text, replies}
     errors: list = field(default_factory=list)
 
     @property
@@ -152,6 +155,34 @@ def _tabdata(name, raw) -> TabData:
     )
 
 
+_NOISE = re.compile(r"^((enter|click) to (sort|filter)|no items|no cases|actions?|add|edit|refresh|search|close|save|"
+                    r"submit|cancel|next|previous|first page|last page|page|of|\d{1,3}|\(\d+\)|items? per page|select|"
+                    r"show more|show less|view|expand|collapse|filter|sort|go|ok|delete|advanced|showing|newest|"
+                    r"oldest|on top|loading\.*|<<|<|>|>>|[-:|*]|page\s+of\s+\d+|show:.*|show sub-?cases?.*|"
+                    r"show sub-case attachments)$", re.I)
+_INITIALS = re.compile(r"^[A-Z]{1,3}$")  # avatar initials ("JC")
+
+
+def other_lines(td: TabData):
+    """What SALTO shows on the tab that is not already in its fields or tables (unusual layouts: Services...)."""
+    norm = lambda s: re.sub(r"\s+", " ", str(s or "")).strip().lower()
+    parts = [td.name]
+    for sec, fs in td.sections:
+        parts += [sec] + [x for f in fs for x in f]
+    for g in td.grids:
+        parts += [g.name, *g.headers] + [v for r in g.rows for v in r.values()]
+    known = " ¦ ".join(norm(x) for x in parts)
+    out = []
+    for line in dict.fromkeys(l.strip() for l in (td.text or "").splitlines()):
+        n = norm(line)
+        if len(n) < 2 or _NOISE.match(n) or _INITIALS.match(line) or n in known:
+            continue
+        if ":" in n and all(p.strip() in known for p in n.split(":", 1) if p.strip()):
+            continue
+        out.append(line)
+    return out
+
+
 def tab_names(b):
     return [re.sub(r"\s+", " ", t.text).strip() for t in b.driver.find_elements(By.XPATH, "//*[@role='tab']")
             if t.is_displayed() and t.text.strip()]
@@ -213,6 +244,41 @@ document.querySelectorAll('[data-repeat-source$="pyWorkParty"] > [role=row], [da
 });
 return out;
 """
+
+
+_PULSE_JS = r"""
+const box = document.querySelector('[data-node-id=pyDisplayContextPosts]');
+if (!box) return [];
+const DATE = /^\d{1,2} [A-Z][a-z]{2} \d{4}( \d{1,2}:\d{2}( [AP]M)?)?$/;
+const NOISE = /^(Comment|Like|Unlike|Reply|Delete|Edit|Refresh|Message|Pulse|[A-Z]{1,3}|\d+ (likes?|comments?))$/;
+const out = [];
+for (const p of box.querySelectorAll('.pulse-display-post')) {
+  // the post's own block: climb until it holds the author + date line
+  let c = p, lines = [];
+  for (let i = 0; i < 8 && c.parentElement; i++) {
+    c = c.parentElement;
+    lines = (c.innerText || '').split('\n').map(s => s.trim()).filter(Boolean);
+    if (lines.some(l => DATE.test(l))) break;
+  }
+  const text = (p.innerText || '').trim();
+  const di = lines.findIndex(l => DATE.test(l));
+  const before = lines.slice(0, Math.max(di, 0)).filter(l => !NOISE.test(l));
+  const author = before.length ? before[before.length - 1] : '';
+  // replies: other posts nested in this block after the main text
+  const replies = [...c.querySelectorAll('.pulse-display-post')].filter(x => x !== p).map(x => (x.innerText || '').trim());
+  out.push({author: author, date: di >= 0 ? lines[di] : '', text: text, replies: replies, _nested: !!p.parentElement.closest('.pulse-display-post')});
+}
+// a reply also appears as its own post: keep top-level posts only
+return out.filter((o, i, all) => !all.some((x, j) => j !== i && x.replies.includes(o.text) && x.text !== o.text));
+"""
+
+
+def read_pulse(b):
+    """The case's Pulse feed (messages and their replies), newest first as SALTO shows it."""
+    with suppress(WebDriverException):
+        return [{k: v for k, v in p.items() if not k.startswith("_")}
+                for p in b.driver.execute_script(_PULSE_JS) or []]
+    return []
 
 
 def read_participants(b):
@@ -442,11 +508,67 @@ def _scope_checkbox(b):
     return lab, b.driver.find_element(By.ID, lab.get_attribute("for"))
 
 
+_PAGERS_JS = r"""
+const root = arguments[0] || document;
+return [...root.querySelectorAll('input[name=pyGridActivePage]')].filter(e => e.offsetWidth).map(e => {
+  const m = (e.getAttribute('aria-label') || '').match(/Page\s+(\d+)\s+of\s+(\d+)/i);
+  return m ? [+m[1], +m[2]] : [1, 1];
+});
+"""
+
+
+def _go_page(b, index, page):
+    """Type a page number into a SALTO table's page box (its onchange runs SALTO's own paginator)."""
+    boxes = [e for e in b.driver.find_elements(By.XPATH, "//*[@role='tabpanel']//input[@name='pyGridActivePage']")
+             if e.is_displayed()]
+    if index < len(boxes):
+        b.driver.execute_script("arguments[0].value = arguments[1];"
+                                "arguments[0].dispatchEvent(new Event('change', {bubbles: true}));",
+                                boxes[index], str(page))
+        # the table is redrawn with a new page box: wait until it says this page, then until it settles
+        deadline = time.time() + 25
+        while time.time() < deadline:
+            with suppress(WebDriverException):
+                now = [e.get_attribute("aria-label") or "" for e in b.driver.find_elements(
+                    By.XPATH, "//*[@role='tabpanel']//input[@name='pyGridActivePage']") if e.is_displayed()]
+                if index < len(now) and re.match(rf"Page\s+{page}\s+of", now[index], re.I):
+                    break
+            time.sleep(0.4)
+        time.sleep(0.8)
+        return _wait_stable(b)
+    return None
+
+
+def paged_extract(b, panel, log=print, max_pages=40):
+    """extract() plus the other pages of every paged table in the panel (SALTO shows 50 rows a page)."""
+    raw = extract(b, panel)
+    pagers = b.driver.execute_script(_PAGERS_JS, panel) or []
+    for i, (_, total) in enumerate(pagers):
+        if total <= 1:
+            continue
+        for page in range(2, min(total, max_pages) + 1):
+            log(f"  table page {page} of {total}...")
+            p = _go_page(b, i, page)
+            more = extract(b, p)
+            for g in more.get("grids", []):
+                same = next((x for x in raw.get("grids", []) if x["headers"] == g["headers"]
+                             and x["name"] == g["name"]), None)
+                if same is None:  # a table that only shows on this page (e.g. EQUIPMENT INFORMATION)
+                    raw.setdefault("grids", []).append(g)
+                    continue
+                seen = {json.dumps(r, sort_keys=True) for r in same["rows"]}
+                same["rows"] += [r for r in g["rows"] if json.dumps(r, sort_keys=True) not in seen]
+        with suppress(WebDriverException):
+            _go_page(b, i, 1)  # leave SALTO on page 1
+    return raw
+
+
 def _device_grid(b):
-    raw = extract(b, _visible_panel(b))
+    raw = paged_extract(b, _visible_panel(b), log=lambda m: None)
     counts = [tuple(f) for s in raw.get("sections", []) for f in s["fields"] if f[0].startswith("Number of")]
     grids = [g for g in raw.get("grids", []) if "USID" in g["headers"] or "Name" in g["headers"]]
     g = grids[0] if grids else {"headers": [], "rows": []}
+    _device_grid.extra = [x for x in raw.get("grids", []) if x is not g]
     return counts, g
 
 
@@ -472,11 +594,13 @@ def read_ts(b, log=print):
         b.click(target)
         _wait_stable(b)
         all_g, scope_g, counts = {"headers": [], "rows": []}, {"headers": [], "rows": []}, []
+        extra = []
         try:
             _, cb = _scope_checkbox(b)
             was = cb.is_selected()
             _set_scope(b, False)
             counts, all_g = _device_grid(b)
+            extra = list(_device_grid.extra)  # tables shown with all devices (the scope view may hide them)
             _set_scope(b, True)
             counts2, scope_g = _device_grid(b)
             counts = counts2 or counts
@@ -485,7 +609,9 @@ def read_ts(b, log=print):
             counts, all_g = _device_grid(b)
         result.append(ScopeNode(n["product"], n["node"], counts,
                                 Grid("Scope of work devices", scope_g["headers"], scope_g["rows"]),
-                                Grid("All devices", all_g["headers"], all_g["rows"])))
+                                Grid("All devices", all_g["headers"], all_g["rows"]),
+                                [Grid(x["name"], x["headers"], x["rows"])
+                                 for x in extra + [y for y in getattr(_device_grid, "extra", []) if y not in extra]]))
     return result
 
 
@@ -504,17 +630,64 @@ def open_subcase(b, parent_id, sub_id):
         raise NoSuchElementException(f"link to {sub_id} not found")
     b.driver.execute_script("arguments[0].scrollIntoView({block:'center'})", link[0])
     b.click(link[0])
-    enter_case(b, sub_id, timeout=60)
+    time.sleep(1)
+    if "already open" in _accept_alert(b).lower() and _focus_case_tab(b, sub_id):
+        enter_case(b, sub_id, timeout=60)  # open in a tab SALTO did not name after the case
+        return
+    try:
+        enter_case(b, sub_id, timeout=90)  # a busy SALTO can take more than a minute to open a sub-case
+    except NoSuchElementException:
+        # SALTO sometimes fails to load it ("Problem loading page" in a "Work Item" tab): close that, ask again
+        if not _close_broken_tabs(b) and _focus_case_tab(b, sub_id):
+            enter_case(b, sub_id, timeout=60)
+            return
+        _focus_case_tab(b, parent_id)
+        enter_case(b, parent_id)
+        open_tab(b, "Overview")
+        link = [a for a in b.driver.find_elements(
+            By.XPATH, f"//*[@role='tabpanel']//a[contains(normalize-space(.), '({sub_id})')]") if a.is_displayed()]
+        if not link:
+            raise
+        b.click(link[0])
+        enter_case(b, sub_id, timeout=90)
     time.sleep(0.5)
+
+
+def _close_broken_tabs(b):
+    """Close SALTO tabs whose page failed to load (Firefox 'Problem loading page'). True if one was closed."""
+    d = b.driver
+    closed = False
+    d.switch_to.default_content()
+    for li in d.find_elements(By.XPATH, "//li[@role='tab']"):
+        with suppress(WebDriverException):
+            if not li.is_displayed() or not (li.get_attribute("aria-label") or "").startswith("Work Item"):
+                continue
+            d.execute_script("arguments[0].click()", li)
+            time.sleep(1.5)
+            broken = False
+            for _ in b.frames():
+                if d.execute_script("return document.title") == "Problem loading page":
+                    broken = True
+                    break
+            d.switch_to.default_content()
+            if broken:
+                for x in li.find_elements(By.XPATH, ".//span[contains(@class,'iconCloseSmall')]"):
+                    d.execute_script("arguments[0].click()", x)
+                    time.sleep(1.5)
+                    closed = True
+    return closed
 
 
 def close_case_tab(b, case_id):
     d = b.driver
     d.switch_to.default_content()
-    for li in d.find_elements(By.XPATH, f"//li[@role='tab' and starts-with(@aria-label, '{case_id} ')]"):
+    tabs = d.find_elements(By.XPATH, f"//li[@role='tab' and starts-with(@aria-label, '{case_id} ')]") or \
+        d.find_elements(By.XPATH, "//li[@role='tab' and starts-with(@aria-label, 'Work Item') and @aria-selected='true']")
+    for li in tabs:
         for x in li.find_elements(By.XPATH, ".//span[contains(@class,'iconCloseSmall')]"):
             d.execute_script("arguments[0].click()", x)
             time.sleep(1.5)
+            _accept_alert(b)
             return True
     return False
 
@@ -527,6 +700,7 @@ def read_case(b: SaltoBrowser, case_id: str, opts: Options = None, log=print, re
         data.stages = read_stages(b)
     data.header = read_header(b)
     data.participants = read_participants(b)
+    data.pulse = read_pulse(b)
     names = tab_names(b) or CASE_TABS
     sub_ids = []
     for name in names:
@@ -551,17 +725,19 @@ def read_case(b: SaltoBrowser, case_id: str, opts: Options = None, log=print, re
                         td.grids.append(Grid(f"{n.node} - scope of work", n.devices.headers, n.devices.rows))
                     if n.all_devices and n.all_devices.rows:
                         td.grids.append(Grid(f"{n.node} - all devices", n.all_devices.headers, n.all_devices.rows))
+                    td.grids += [Grid(f"{n.node} - {g.name}", g.headers, g.rows) for g in getattr(n, "extra", [])]
                 data.tabs[name] = td
             else:
                 panel = open_tab(b, name)
-                raw = extract(b, panel)
+                raw = paged_extract(b, panel, log)
                 td = _tabdata(name, raw)
                 for sub in [s for s in raw.get("subtabs", []) if s not in names]:   # tabs inside a tab
                     with suppress(WebDriverException):
                         sp = open_tab(b, sub)
-                        st = _tabdata(sub, extract(b, sp))
+                        st = _tabdata(sub, paged_extract(b, sp, log))
                         td.sections += [(f"{sub} / {s}", f) for s, f in st.sections]
                         td.grids += [Grid(f"{sub} / {g.name}", g.headers, g.rows) for g in st.grids]
+                        td.text += f"\n{sub}\n{st.text}"
                     open_tab(b, name)
                 data.tabs[name] = td
             if opts.tab_screenshots and opts.folder:
@@ -601,6 +777,7 @@ def read_subcases(b, data, opts, log=print, read_stages=None, on_each=None):
     """Read data.pending_subs one by one (each opened from the main case); on_each(sub) after each one."""
     case_id = data.stc_id
     total = len(data.pending_subs) + len(data.subcases)
+    failed = {}  # sub-case -> first error: tried once more at the end (SALTO is often just slow)
     while data.pending_subs:
         if opts.cancel is not None and opts.cancel.is_set():
             log("Stopped reading sub-cases (another order was opened).")
@@ -613,8 +790,13 @@ def read_subcases(b, data, opts, log=print, read_stages=None, on_each=None):
             sub = read_case(b, sid, opts, log, read_stages, depth=1)
             data.subcases.append(sub)
         except Exception as exc:  # one bad sub-case never stops the others
-            data.errors.append(f"{sid}: {errors.note(exc)}")
-            log(f"  could not open {sid}")
+            if sid in failed:
+                data.errors.append(f"{sid}: {failed[sid]}")
+                log(f"  could not open {sid}")
+            else:
+                failed[sid] = errors.note(exc)
+                data.pending_subs.append(sid)  # second try after the others
+                log(f"  {sid} is slow to open; trying it again at the end")
         finally:
             data.pending_subs.pop(0)
             with suppress(WebDriverException):
@@ -635,4 +817,26 @@ def _focus_case_tab(b, case_id):
             b.click(li)
             time.sleep(0.8)
         return True
+    # SALTO sometimes labels a case's tab "Work Item": look inside those tabs
+    for li in d.find_elements(By.XPATH, "//li[@role='tab' and starts-with(@aria-label, 'Work Item')]"):
+        with suppress(WebDriverException):
+            if not li.is_displayed():
+                continue
+            d.execute_script("arguments[0].click()", li)
+            time.sleep(1.5)
+            for i, _ in enumerate(b.frames()):
+                if i and (d.execute_script("return document.title || ''") or "").endswith(case_id):
+                    d.switch_to.default_content()
+                    return True
+            d.switch_to.default_content()
     return False
+
+
+def _accept_alert(b):
+    """Close a browser alert (e.g. SALTO's 'Work Object Already Open'); returns its text, or ''."""
+    with suppress(WebDriverException):
+        alert = b.driver.switch_to.alert
+        text = alert.text
+        alert.accept()
+        return text
+    return ""
