@@ -1,4 +1,4 @@
-﻿"""SALTO Buddy - desktop app.
+"""SALTO Buddy - desktop app.
 
 Run from source:  py app.py
 """
@@ -18,13 +18,13 @@ from salto.version import APP_NAME, __version__
 from salto.worker import BrowserWorker
 from ui import guide
 from ui import theme as T
-from ui.widgets import Pill
+from ui.widgets import NavItem, Pill, RoundCard
 
 PILL = {  # browser state -> (text, dot colour)
-    "offline": ("Ready", T.PILL_READY),
+    "offline": ("Ready", T.GREEN),
     "starting": ("Starting Firefox...", T.ORANGE),
     "signing-in": ("Signing in to SALTO...", T.ORANGE),
-    "connected": ("Connected to SALTO", T.PILL_READY),
+    "connected": ("Connected to SALTO", T.GREEN),
     "offline-network": ("Offline - waiting for network", T.PILL_OFFLINE),
 }
 ERROR_LOG = os.path.join(config.CONFIG_DIR, "error.log")
@@ -50,25 +50,31 @@ class App:
         T.setup(root)
         root.report_callback_exception = self._report
 
-        self._header()
-        tk.Frame(root, bg=T.ORANGE, height=3).pack(fill="x")
-        self._statusbar()
-        self.tabs = ttk.Notebook(root)
-        self.tabs.pack(fill="both", expand=True, padx=16, pady=(4, 0))
-
         self.worker = BrowserWorker(log=self.log, on_state=lambda s: self.ui(lambda: self._set_state(s)),
                                     visible=self.cfg.get("show_browser", False))
         self.reports = {}      # order_ref -> OrderReport read this session (shared by the features)
         self.explorer = None   # the Order explorer feature (Ask Buddy opens orders through it)
-        self.features = []
-        for cls in FEATURES:
-            page = ttk.Frame(self.tabs, style="Card.TFrame", padding=(16, 12))
-            self.tabs.add(page, text=cls.title)
+        self.features, self.pages, self.nav = [], [], []
+
+        self._sidebar()
+        main = tk.Frame(root, bg=T.CANVAS)
+        main.pack(side="left", fill="both", expand=True, padx=(4, 18), pady=(14, 0))
+        top = tk.Frame(main, bg=T.CANVAS)
+        top.pack(fill="x", pady=(4, 10))
+        self.page_title = tk.Label(top, text="", bg=T.CANVAS, fg=T.INK, font=T.F_PAGE, anchor="w")
+        self.page_title.pack(anchor="w")
+        self.page_sub = tk.Label(top, text="", bg=T.CANVAS, fg=T.MUTED, font=T.F_SMALL, anchor="w")
+        self.page_sub.pack(anchor="w")
+        self._statusbar(main)
+        for i, cls in enumerate(FEATURES):
+            card = RoundCard(main, radius=20, pad=18)
             f = cls(self)
             if cls.__name__ == "OrderExplorer":
                 self.explorer = f
-            f.build(page)
+            f.build(card.inner)
             self.features.append(f)
+            self.pages.append(card)
+        self.select(0)
 
         root.protocol("WM_DELETE_WINDOW", self.on_close)
         root.after(80, self._pump)
@@ -103,37 +109,70 @@ class App:
         threading.Thread(target=work, daemon=True).start()
 
     # ------------------------------------------------------------ chrome
-    def _header(self):
-        h = tk.Frame(self.root, bg=T.HEADER, height=58)
-        h.pack(fill="x")
-        h.pack_propagate(False)
-        logo = tk.Label(h, text="SB", bg=T.ORANGE, fg="white", font=(T.FONT, 12, "bold"), width=3)
-        logo.pack(side="left", padx=(16, 10), pady=12, ipady=4)
-        txt = tk.Frame(h, bg=T.HEADER)
-        txt.pack(side="left")
-        tk.Label(txt, text=APP_NAME, bg=T.HEADER, fg="white", font=T.F_APP).pack(anchor="w")
-        tk.Label(txt, text="SALTO order explorer", bg=T.HEADER, fg=T.SUBTLE, font=T.F_SMALL).pack(anchor="w")
-        self.update_btn = ttk.Button(h, text="Check for updates", style="Header.TButton",
-                                     command=lambda: self.prompt_update() if self._update else self.check_updates(False))
-        self.update_btn.pack(side="right", padx=(6, 16))
-        ttk.Button(h, text="Settings", style="Header.TButton", command=self.show_settings).pack(side="right")
-        ttk.Button(h, text="Guide", style="Header.TButton", command=lambda: guide.show_guide(self.root)).pack(
-            side="right", padx=6)
-        self.pill = Pill(h)
-        self.pill.pack(side="right", padx=12)
+    def _sidebar(self):
+        k = max(1.0, self.root.winfo_fpixels("1i") / 96)  # Windows display scaling
+        side = RoundCard(self.root, radius=22, pad=14, width=int(208 * k))
+        side.pack(side="left", fill="y", padx=(18, 14), pady=18)
+        side.pack_propagate(False)
+        box = side.inner
+        brand = tk.Frame(box, bg=T.CARD)
+        brand.pack(fill="x", padx=6, pady=(8, 22))
+        px = 64 if k >= 1.4 else 48 if k > 1.15 else 40
+        logo = os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))), "assets",
+                            f"logo_{px}.png")
+        if os.path.exists(logo):
+            self._logo = tk.PhotoImage(file=logo)
+            tk.Label(brand, image=self._logo, bg=T.CARD).pack(side="left")
+        names = tk.Frame(brand, bg=T.CARD)
+        names.pack(side="left", padx=(10, 0))
+        tk.Label(names, text=APP_NAME, bg=T.CARD, fg=T.INK, font=T.F_SECTION).pack(anchor="w")
+        tk.Label(names, text="for SALTO", bg=T.CARD, fg=T.MUTED, font=T.F_SMALL).pack(anchor="w")
 
-    def _statusbar(self):
-        bar = tk.Frame(self.root, bg=T.CARD, highlightthickness=1, highlightbackground=T.LINE)
-        bar.pack(side="bottom", fill="x")
-        top = tk.Frame(bar, bg=T.CARD)
+        tk.Label(box, text="MENU", bg=T.CARD, fg=T.SUBTLE, font=T.F_CAPS).pack(anchor="w", padx=12, pady=(0, 6))
+        for i, cls in enumerate(FEATURES):
+            item = NavItem(box, getattr(cls, "icon", "\uE80F"), cls.title, lambda i=i: self.select(i))
+            item.pack(fill="x", pady=1)
+            self.nav.append(item)
+
+        bottom = tk.Frame(box, bg=T.CARD)
+        bottom.pack(side="bottom", fill="x")
+        tk.Label(bottom, text="SUPPORT", bg=T.CARD, fg=T.SUBTLE, font=T.F_CAPS).pack(anchor="w", padx=12,
+                                                                                  pady=(0, 6))
+        NavItem(bottom, "\uE897", "Guide", lambda: guide.show_guide(self.root)).pack(fill="x", pady=1)
+        NavItem(bottom, "\uE713", "Settings", self.show_settings).pack(fill="x", pady=1)
+        self.update_item = NavItem(bottom, "\uE896", "Check for updates",
+                                   lambda: self.prompt_update() if self._update else self.check_updates(False))
+        self.update_item.pack(fill="x", pady=1)
+        self.pill = Pill(bottom)
+        self.pill.pack(fill="x", pady=(14, 4))
+        tk.Label(bottom, text=f"Version {__version__}", bg=T.CARD, fg=T.SUBTLE, font=T.F_SMALL).pack(anchor="w",
+                                                                                                padx=12)
+
+    def select(self, index):
+        """Show one feature page (sidebar click)."""
+        for i, (card, item) in enumerate(zip(self.pages, self.nav)):
+            item.set(selected=i == index)
+            if i != index:
+                card.pack_forget()
+        cls = FEATURES[index]
+        self.page_title.configure(text=cls.title)
+        self.page_sub.configure(text=getattr(cls, "subtitle", ""))
+        self.pages[index].pack(fill="both", expand=True, pady=(0, 10))
+        self.current = self.features[index] if index < len(self.features) else None
+
+    def _statusbar(self, parent):
+        bar = tk.Frame(parent, bg=T.CANVAS)
+        bar.pack(side="bottom", fill="x", pady=(0, 8))
+        top = tk.Frame(bar, bg=T.CANVAS)
         top.pack(fill="x")
-        self.status = tk.Label(top, text="Ready", bg=T.CARD, fg=T.MUTED, font=T.F_SMALL, anchor="w")
-        self.status.pack(side="left", fill="x", expand=True, padx=12, pady=4)
-        self.log_link = tk.Label(top, text="Show activity", bg=T.CARD, fg=T.ORANGE, font=T.F_SMALL_BOLD, cursor="hand2")
-        self.log_link.pack(side="right", padx=12)
+        self.status = tk.Label(top, text="Ready", bg=T.CANVAS, fg=T.MUTED, font=T.F_SMALL, anchor="w")
+        self.status.pack(side="left", fill="x", expand=True, padx=4)
+        self.log_link = tk.Label(top, text="Show activity", bg=T.CANVAS, fg=T.ORANGE, font=T.F_SMALL_BOLD,
+                                 cursor="hand2")
+        self.log_link.pack(side="right", padx=4)
         self.log_link.bind("<Button-1>", lambda e: self.toggle_log())
         self.logbox = tk.Text(bar, height=7, font=T.F_LOG, bg=T.CARD, fg=T.INK, borderwidth=0,
-                              highlightthickness=0, padx=12, state="disabled")
+                              highlightthickness=0, padx=12, pady=8, state="disabled")
 
     def toggle_log(self):
         if self.logbox.winfo_ismapped():
@@ -359,7 +398,7 @@ class App:
             if not silent:
                 messagebox.showinfo(APP_NAME, f"You're up to date (version {__version__}).")
             return
-        self.update_btn.configure(text=f"Update to {info.version}", style="Update.TButton")
+        self.update_item.set(text=f"Update to {info.version}", badge=True)
         self.log(f"Update available: {info.version}")
         if not silent or self.cfg.get("skipped_version") != info.version:
             self.prompt_update()

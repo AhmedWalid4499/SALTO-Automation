@@ -13,7 +13,7 @@ from salto.actions import order_lookup, read_stages
 from salto.case import Options, download_attachments, other_lines, read_subcases
 from salto.export import export_report
 from ui import theme as T
-from ui.widgets import DetailView, Segmented, StatusCard, Stepper, Table, ThinProgress
+from ui.widgets import DetailView, IconButton, Segmented, StatusCard, Stepper, Table, ThinProgress
 
 from .base import Feature
 
@@ -22,6 +22,8 @@ FILE_COLS = ["Case", "Title", "Category", "Added by", "Date", "Status"]
 
 class OrderExplorer(Feature):
     title = "Order explorer"
+    icon = "\uF246"
+    subtitle = "Open a GOLD order: stage, devices, serial numbers, people, every tab and sub-case"
 
     def build(self, parent):
         self.rep = None
@@ -38,12 +40,14 @@ class OrderExplorer(Feature):
         e.focus_set()
         self.open_btn = ttk.Button(bar, text="Open order", style="Accent.TButton", command=self.go)
         self.open_btn.pack(side="left")
-        self.export_btn = ttk.Button(bar, text="Export to Excel", command=self.export, state="disabled")
+        # secondary actions: compact icon buttons (the tooltip says what each does)
+        self.export_btn = IconButton(bar, "\uE9F9", "Export to Excel", self.export)
+        self.export_btn.configure(state="disabled")
         self.export_btn.pack(side="right")
-        ttk.Button(bar, text="Open folder", command=self.open_folder).pack(side="right", padx=6)
-        self.pick_btn = ttk.Button(bar, text="Capture a part", command=self.pick)
+        IconButton(bar, "\uE8B7", "Open the order folder", self.open_folder).pack(side="right", padx=6)
+        self.pick_btn = IconButton(bar, "\uE7A8", "Capture a part of the SALTO page", self.pick)
         self.pick_btn.pack(side="right")
-        ttk.Button(bar, text="Screenshot", command=self.shot).pack(side="right", padx=6)
+        IconButton(bar, "\uE722", "Screenshot of the whole SALTO page", self.shot).pack(side="right", padx=6)
 
         # ---- order header: title, stage bar, a few key numbers
         head = tk.Frame(parent, bg=T.CARD)
@@ -54,16 +58,16 @@ class OrderExplorer(Feature):
         steps.pack(fill="x", pady=(4, 0))
         self.stepper = Stepper(steps)
         self.stepper.pack(side="left")
-        self.folder_lbl = tk.Label(steps, text="", bg=T.CARD, fg=T.MUTED, font=T.F_SMALL, cursor="hand2")
-        self.folder_lbl.pack(side="right")
+        self.folder_lbl = tk.Label(head, text="", bg=T.CARD, fg=T.MUTED, font=T.F_SMALL, cursor="hand2", anchor="w")
+        self.folder_lbl.pack(fill="x", pady=(4, 0))
         self.folder_lbl.bind("<Button-1>", lambda _e: self.open_folder())
         self.progress = ThinProgress(parent)
         cards = tk.Frame(parent, bg=T.CARD)
         cards.pack(fill="x", pady=(10, 0))
         self.cards = {}
         for i, name in enumerate(["Status", "Current stage", "EQPs", "Scope devices", "Sub-cases", "Attachments"]):
-            c = StatusCard(cards, name)
-            c.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 6, 0))
+            c = StatusCard(cards, name, variant={"Status": "dark", "Current stage": "accent"}.get(name, "plain"))
+            c.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 10, 0))
             cards.grid_columnconfigure(i, weight=1, uniform="cards")
             self.cards[name] = c
 

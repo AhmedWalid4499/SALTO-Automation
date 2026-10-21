@@ -11,7 +11,7 @@ Set-Location $PSScriptRoot
 $version = (Select-String -Path "salto\version.py" -Pattern '__version__\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
 Write-Host "Building SALTO Buddy $version" -ForegroundColor Cyan
 
-if (-not (Test-Path "assets\app.ico")) { py assets\make_icon.py }
+if (-not (Test-Path "assets\logo_48.png")) { py assets\make_icon.py }
 
 # geckodriver to bundle (Selenium Manager caches it on first run from source)
 $gecko = Get-ChildItem "$env:USERPROFILE\.cache\selenium\geckodriver" -Recurse -Filter geckodriver.exe -ErrorAction SilentlyContinue |
@@ -29,6 +29,9 @@ py -m PyInstaller --noconfirm --clean --windowed --name "SALTO Buddy" `
     --hidden-import salto.assistant `
     --add-data "$PSScriptRoot\salto\extract.js;salto" `
     --add-data "$PSScriptRoot\assets\app.ico;assets" `
+    --add-data "$PSScriptRoot\assets\logo_40.png;assets" `
+    --add-data "$PSScriptRoot\assets\logo_48.png;assets" `
+    --add-data "$PSScriptRoot\assets\logo_64.png;assets" `
     --add-binary "$($gecko.FullName);." `
     --distpath "$dist" --workpath "$work\tmp" --specpath "$work" app.py
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }

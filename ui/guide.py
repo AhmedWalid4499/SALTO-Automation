@@ -212,7 +212,11 @@ def show_whats_new(app):
 
     def page_new(d):
         d.title("What's new")
-        for s in ["New: Org Chart - emails, job titles and managers (with their emails) of everyone on an order, and "
+        for s in ["A new look: a new logo, a menu on the left, rounded cards and clearer key figures. Everything is "
+                  "where it was, just easier to read.",
+                  "Nothing is left behind: every sub-case and every page of every table is read, plus the Pulse "
+                  "messages and any information on a tab that is not a field or a table.",
+                  "New: Org Chart - emails, job titles and managers (with their emails) of everyone on an order, and "
                   "an Org Chart tab to find anyone at Orange Business with their management chain.",
                   "Ask Buddy answers are clearer: the answer first, then short sections, tables for devices and serial "
                   "numbers, and where it comes from. 'Copy answer' pastes cleanly into Outlook or Excel.",

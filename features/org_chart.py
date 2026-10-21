@@ -20,17 +20,17 @@ def _row(p):
 
 class OrgChartFinder(Feature):
     title = "Org Chart"
+    icon = "\uEBDA"
+    subtitle = "Emails, jobs and managers from the Orange Business Org Chart"
 
     def build(self, parent):
         self.people = []
-        tk.Label(parent, text="Org Chart", bg=T.CARD, fg=T.INK, font=T.F_TITLE, anchor="w").pack(fill="x")
-        tk.Label(parent, text="Find anyone at Orange Business: email, job, and who they report to (with emails), "
-                              "from the Orange Business Org Chart. Partial names work.",
-                 bg=T.CARD, fg=T.MUTED, font=T.F_SMALL, anchor="w").pack(fill="x", pady=(2, 10))
+        tk.Label(parent, text="Partial names work. Select a person to see who they report to.", bg=T.CARD,
+                 fg=T.MUTED, font=T.F_SMALL, anchor="w").pack(fill="x", pady=(0, 10))
         bar = ttk.Frame(parent, style="Card.TFrame")
         bar.pack(fill="x")
         self.vars = {}
-        for label, width in (("Last name", 14), ("First name", 12), ("Email", 22)):
+        for label, width in (("Last name", 12), ("First name", 10), ("Email", 18)):
             ttk.Label(bar, text=label, font=T.F_BOLD).pack(side="left", padx=(0 if not self.vars else 12, 6))
             v = tk.StringVar()
             e = ttk.Entry(bar, textvariable=v, width=width, font=(T.FONT, 11))

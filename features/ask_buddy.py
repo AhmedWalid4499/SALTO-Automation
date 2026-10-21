@@ -10,12 +10,14 @@ from ui import theme as T
 
 from .base import Feature
 
-EXAMPLES = ["What is the site address?", "Serial numbers of the devices in creation",
-            "Who is the local delivery manager?", "Which sub-cases are still open, and at what stage?"]
+EXAMPLES = ["What is the site address?", "Serial numbers in creation", "Who is the delivery manager?",
+            "Which sub-cases are open?"]
 
 
 class AskBuddy(Feature):
     title = "Ask Buddy"
+    icon = "\uE8BD"
+    subtitle = "Ask anything about an order, in your own words"
 
     def build(self, parent):
         self.bot = None
@@ -23,13 +25,11 @@ class AskBuddy(Feature):
         self.busy = False
         head = tk.Frame(parent, bg=T.CARD)
         head.pack(fill="x")
-        tk.Label(head, text="Ask Buddy", bg=T.CARD, fg=T.INK, font=T.F_TITLE).pack(side="left")
         self.ctx = tk.Label(head, text="", bg=T.CARD, fg=T.MUTED, font=T.F_SMALL)
         self.ctx.pack(side="left", padx=12)
         ttk.Button(head, text="New chat", command=self.new_chat).pack(side="right")
-        tk.Label(parent, text="Ask anything about an order: Buddy reads it from SALTO for you. Answers come from Claude "
-                              "(Anthropic) and only use what SALTO shows.", bg=T.CARD, fg=T.MUTED, font=T.F_SMALL,
-                 anchor="w").pack(fill="x", pady=(2, 8))
+        tk.Label(parent, text="Answers come from Claude (Anthropic) and only use what SALTO shows.", bg=T.CARD,
+                 fg=T.MUTED, font=T.F_SMALL, anchor="w").pack(fill="x", pady=(2, 8))
 
         # input row and example chips are pinned to the bottom; the conversation takes the rest
         row = tk.Frame(parent, bg=T.CARD)
@@ -42,8 +42,7 @@ class AskBuddy(Feature):
         chips = tk.Frame(parent, bg=T.CARD)
         chips.pack(side="bottom", fill="x", pady=(8, 4))
         for ex in EXAMPLES:
-            c = tk.Label(chips, text=ex, bg=T.BUTTON, fg=T.INK, font=T.F_SMALL, padx=10, pady=4, cursor="hand2",
-                         highlightthickness=1, highlightbackground=T.BUTTON_BORDER)
+            c = tk.Label(chips, text=ex, bg=T.FIELD, fg=T.INK, font=T.F_SMALL, padx=12, pady=5, cursor="hand2")
             c.pack(side="left", padx=(0, 6))
             c.bind("<Button-1>", lambda e, t=ex: (self.entry.delete(0, "end"), self.entry.insert(0, t), self.send()))
 

@@ -12,21 +12,23 @@ from .base import Feature
 
 class HotoPrep(Feature):
     title = "HOTO preparation"
+    icon = "\uE9D5"
+    subtitle = "The HOTO sheet of a LAN order, filled from SALTO and FLIP"
 
     def build(self, parent):
         self.rows = []
         bar = ttk.Frame(parent, style="Card.TFrame")
         bar.pack(fill="x")
-        tk.Label(bar, text="HOTO preparation", bg=T.CARD, fg=T.INK, font=T.F_TITLE).pack(side="left")
         self.save_btn = ttk.Button(bar, text="Save HOTO Excel", style="Accent.TButton", command=self.save,
                                    state="disabled")
         self.save_btn.pack(side="right")
         self.copy_btn = ttk.Button(bar, text="Copy all rows", command=self.copy, state="disabled")
         self.copy_btn.pack(side="right", padx=6)
-        tk.Label(parent, text="The HOTO sheet of a LAN project, filled from the order open in Order explorer: one row "
-                              "per device in creation. Admin and customer IP addresses are not in SALTO: fill them "
-                              "in Excel.", bg=T.CARD, fg=T.MUTED, font=T.F_SMALL, anchor="w", justify="left",
-                 wraplength=1100).pack(fill="x", pady=(2, 8))
+        intro = tk.Label(bar, text="One row per device in creation, from the order open in Order explorer. Admin and "
+                                   "customer IP addresses are not in SALTO: fill them in Excel.", bg=T.CARD,
+                         fg=T.MUTED, font=T.F_SMALL, anchor="w", justify="left")
+        intro.pack(side="left", fill="x", expand=True)
+        intro.bind("<Configure>", lambda e: intro.configure(wraplength=max(200, e.width - 10)))
         self.info = tk.Label(parent, text="", bg=T.CARD, fg=T.INK, font=T.F_BODY, anchor="w", justify="left",
                              wraplength=1100)
         self.info.pack(fill="x")

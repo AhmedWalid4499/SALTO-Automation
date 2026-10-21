@@ -192,35 +192,6 @@ class DetailView(ttk.Frame):
 
 
 # ---------------------------------------------------------------- small pieces
-class StatusCard(tk.Frame):
-    def __init__(self, parent, caption, value="—"):
-        super().__init__(parent, bg=T.STATUS_CARD, highlightthickness=1, highlightbackground=T.LINE)
-        self.cap = tk.Label(self, text=caption.upper(), bg=T.STATUS_CARD, fg=T.MUTED, font=T.F_CAPS, anchor="w")
-        self.cap.pack(fill="x", padx=10, pady=(5, 0))
-        self.val = tk.Label(self, text=value, bg=T.STATUS_CARD, fg=T.INK, font=T.F_BIG, anchor="w")
-        self.val.pack(fill="x", padx=10, pady=(0, 5))
-        self.bind("<Configure>", lambda e: self._fit())
-
-    def set(self, value, rag=None):
-        fg, bg = T.RAG.get(rag, (T.INK, T.STATUS_CARD)) if rag else (T.INK, T.STATUS_CARD)
-        for w in (self, self.cap, self.val):
-            w.configure(bg=bg)
-        self.val.configure(text=value or "—", fg=fg)
-        self._fit()
-
-    def _fit(self):
-        """Largest font (16 -> 9 pt) that fits the card, so long values shrink instead of being cut."""
-        room = self.winfo_width() - 24
-        if room <= 0:
-            return
-        text = self.val.cget("text")
-        for size in (15, 13, 12, 11, 10, 9):
-            f = tkfont.Font(family=T.FONT, size=size, weight="bold")
-            if f.measure(text) <= room:
-                break
-        self.val.configure(font=(T.FONT, size, "bold"))
-
-
 class Stepper(tk.Frame):
     def __init__(self, parent):
         super().__init__(parent, bg=T.CARD)
@@ -239,18 +210,18 @@ class Stepper(tk.Frame):
 
 
 class Segmented(tk.Frame):
-    """Buttons side by side; the selected one is orange (a 2-6 way choice, e.g. tabs of a sub-case)."""
+    """Buttons side by side; the selected one is dark (a 2-6 way choice, e.g. tabs of a sub-case)."""
 
     def __init__(self, parent, options, command, value=None):
         super().__init__(parent, bg=T.CARD)
         self.command, self.btns = command, {}
         for i, opt in enumerate(options):
-            b = tk.Label(self, text=opt, font=T.F_SMALL_BOLD, padx=12, pady=5, cursor="hand2",
-                         bg=T.BUTTON, fg=T.INK, highlightthickness=1, highlightbackground=T.BUTTON_BORDER)
+            b = tk.Label(self, text=opt, font=T.F_SMALL_BOLD, padx=14, pady=6, cursor="hand2",
+                         bg=T.FIELD, fg=T.INK, highlightthickness=0)
             b.grid(row=i // 8, column=i % 8, padx=(0, 4), pady=(0, 4), sticky="w")
             b.bind("<Button-1>", lambda e, o=opt: self.select(o))
-            b.bind("<Enter>", lambda e, b=b: b.cget("bg") != T.ORANGE and b.configure(bg=T.ORANGE_SOFT))
-            b.bind("<Leave>", lambda e, b=b: b.cget("bg") != T.ORANGE and b.configure(bg=T.BUTTON))
+            b.bind("<Enter>", lambda e, b=b: b.cget("bg") != T.DARK and b.configure(bg=T.BUTTON_HOVER))
+            b.bind("<Leave>", lambda e, b=b: b.cget("bg") != T.DARK and b.configure(bg=T.FIELD))
             self.btns[opt] = b
         if options:
             self.select(value or options[0], fire=False)
@@ -258,8 +229,7 @@ class Segmented(tk.Frame):
     def select(self, opt, fire=True):
         for o, b in self.btns.items():
             on = o == opt
-            b.configure(bg=T.ORANGE if on else T.BUTTON, fg="white" if on else T.INK,
-                        highlightbackground=T.ORANGE if on else T.BUTTON_BORDER)
+            b.configure(bg=T.DARK if on else T.FIELD, fg="white" if on else T.INK)
         self.value = opt
         if fire:
             self.command(opt)
@@ -288,16 +258,245 @@ class ThinProgress(tk.Frame):
             self._job = None
 
 
-class Pill(tk.Frame):
-    """Header status pill: coloured dot + text."""
+def _round_points(x1, y1, x2, y2, r):
+    """Polygon points of a rounded rectangle (draw with smooth=True)."""
+    r = max(0, min(r, (x2 - x1) / 2, (y2 - y1) / 2))
+    return [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2, x2 - r, y2, x1 + r, y2,
+            x1, y2, x1, y2 - r, x1, y1 + r, x1, y1]
 
-    def __init__(self, parent):
-        super().__init__(parent, bg=T.HEADER_HOVER, padx=10, pady=3)
-        self.dot = tk.Label(self, text="●", bg=T.HEADER_HOVER, fg=T.PILL_READY, font=T.F_BODY)
-        self.dot.pack(side="left")
-        self.lbl = tk.Label(self, text="Ready", bg=T.HEADER_HOVER, fg="white", font=T.F_SMALL)
-        self.lbl.pack(side="left", padx=(4, 0))
+
+def _scale(widget):
+    """Windows display scaling (1.0 at 100 %, 1.5 at 150 %): canvas sizes are in pixels and do not follow it."""
+    try:
+        return max(1.0, widget.winfo_fpixels("1i") / 96)
+    except tk.TclError:
+        return 1.0
+
+
+def _bg_of(widget):
+    try:
+        return widget.cget("bg")
+    except tk.TclError:  # ttk widget: its style's background
+        return ttk.Style().lookup(widget.cget("style") or widget.winfo_class(), "background") or T.CANVAS
+
+
+class RoundCard(tk.Canvas):
+    """A rounded card. Put content in .inner (a Frame). fit=True: the card is as tall as its content."""
+
+    def __init__(self, parent, fill=T.CARD, radius=18, pad=16, fit=False, shadow=True, **kw):
+        super().__init__(parent, bg=_bg_of(parent), highlightthickness=0, bd=0, **kw)
+        self.fill, self.radius, self.pad, self.fit, self.shadow = fill, radius, pad, fit, shadow
+        self.inner = tk.Frame(self, bg=fill)
+        self._win = self.create_window(pad, pad, window=self.inner, anchor="nw")
+        self.bind("<Configure>", self._redraw)
+        if fit:
+            self.inner.bind("<Configure>", self._fit, add="+")
+
+    def _fit(self, _e=None):
+        h = self.inner.winfo_reqheight() + 2 * self.pad
+        if int(self.cget("height")) != h:
+            self.configure(height=h)
+
+    def _redraw(self, _e=None):
+        w, h = self.winfo_width(), self.winfo_height()
+        if w < 4 or h < 4:
+            return
+        self.delete("shape")
+        if self.shadow:  # a 1 px soft edge under the card
+            self.create_polygon(_round_points(0, 1, w - 1, h - 1, self.radius), smooth=True, fill=T.SHADOW,
+                                outline="", tags="shape")
+        self.create_polygon(_round_points(0, 0, w - 1, h - 2 if self.shadow else h - 1, self.radius), smooth=True,
+                            fill=self.fill, outline="", tags=("shape", "body"))
+        self.tag_lower("shape")
+        self.itemconfigure(self._win, width=max(1, w - 2 * self.pad))
+        if not self.fit:
+            self.itemconfigure(self._win, height=max(1, h - 2 * self.pad - (1 if self.shadow else 0)))
+
+    def recolor(self, fill):
+        """New card colour (the inner frame and its direct plain children follow)."""
+        old, self.fill = self.fill, fill
+        self.itemconfigure("body", fill=fill)
+        self.inner.configure(bg=fill)
+        for w in self.inner.winfo_children():
+            with _suppress_tcl():
+                if w.cget("bg") == old:
+                    w.configure(bg=fill)
+
+
+class _suppress_tcl:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, *exc):
+        return exc_type is not None and issubclass(exc_type, tk.TclError)
+
+
+class NavItem(tk.Canvas):
+    """A sidebar entry: icon + label on a rounded highlight (orange tint when selected)."""
+
+    def __init__(self, parent, icon, text, command, width=170, height=40, badge=False):
+        self.k = _scale(parent)
+        super().__init__(parent, bg=_bg_of(parent), highlightthickness=0, bd=0, width=int(width * self.k),
+                         height=int(height * self.k), cursor="hand2")
+        self.icon, self.text, self.command, self.badge = icon, text, command, badge
+        self.selected = self.hover = False
+        self.bind("<Configure>", lambda e: self._draw())
+        self.bind("<Enter>", lambda e: self._set_hover(True))
+        self.bind("<Leave>", lambda e: self._set_hover(False))
+        self.bind("<Button-1>", lambda e: self.command())
+
+    def _set_hover(self, on):
+        self.hover = on
+        self._draw()
+
+    def set(self, selected=None, text=None, badge=None):
+        if selected is not None:
+            self.selected = selected
+        if text is not None:
+            self.text = text
+        if badge is not None:
+            self.badge = badge
+        self._draw()
+
+    def _draw(self):
+        self.delete("all")
+        w, h = self.winfo_width(), self.winfo_height()
+        if w < 4:
+            return
+        if self.selected or self.hover:
+            self.create_polygon(_round_points(0, 0, w - 1, h - 1, 12), smooth=True, outline="",
+                                fill=T.ORANGE_TINT if self.selected else T.NAV_HOVER)
+        fg = T.ORANGE if self.selected else (T.INK if self.hover else "#4B5563")
+        self.create_text(int(14 * self.k), h // 2, text=self.icon, font=T.F_ICON, fill=fg, anchor="w")
+        self.create_text(int(44 * self.k), h // 2, text=self.text, font=T.F_BOLD if self.selected else T.F_BODY,
+                         fill=fg, anchor="w")
+        if self.badge:  # small orange dot: something new (an update)
+            self.create_oval(w - 22, h // 2 - 4, w - 14, h // 2 + 4, fill=T.ORANGE, outline="")
+
+
+class Pill(tk.Canvas):
+    """Status pill: coloured dot + short text on a rounded grey background."""
+
+    def __init__(self, parent, width=170, height=34):
+        k = _scale(parent)
+        super().__init__(parent, bg=_bg_of(parent), highlightthickness=0, bd=0, width=int(width * k),
+                         height=int(height * k))
+        self.text, self.color = "Starting...", T.SUBTLE
+        self.bind("<Configure>", lambda e: self._draw())
 
     def set(self, text, color):
-        self.dot.configure(fg=color)
-        self.lbl.configure(text=text[:60])
+        self.text, self.color = text[:60], color
+        self._draw()
+
+    def _draw(self):
+        self.delete("all")
+        w, h = self.winfo_width(), self.winfo_height()
+        if w < 4:
+            return
+        self.create_polygon(_round_points(0, 0, w - 1, h - 1, h // 2), smooth=True, fill=T.NAV_HOVER, outline="")
+        self.create_oval(14, h // 2 - 4, 22, h // 2 + 4, fill=self.color, outline="")
+        text = self.text
+        f = tkfont.Font(font=T.F_SMALL)
+        while text and f.measure(text) > w - 44:
+            text = text[:-2]
+        if text != self.text:
+            text = text.rstrip() + "…"
+        self.create_text(32, h // 2, text=text, font=T.F_SMALL, fill=T.INK, anchor="w")
+
+
+# key-figure card colours: variant -> (card, caption, value)
+_KPI = {"plain": (T.STATUS_CARD, T.MUTED, T.INK), "dark": (T.DARK, "#AEBDBD", "white"),
+        "accent": (T.ORANGE, "#FFE3CC", "white")}
+
+
+class StatusCard(RoundCard):
+    """A key figure: small caption, big value. variant: plain (soft grey), dark (slate) or accent (orange)."""
+
+    def __init__(self, parent, caption, value="—", variant="plain"):
+        card, cap, val = _KPI[variant]
+        super().__init__(parent, fill=card, radius=16, pad=14, fit=True, shadow=variant == "plain")
+        self.variant = variant
+        self.cap = tk.Label(self.inner, text=caption, bg=card, fg=cap, font=T.F_SMALL, anchor="w")
+        self.cap.pack(fill="x")
+        self.val = tk.Label(self.inner, text=value, bg=card, fg=val, font=T.F_KPI, anchor="w")
+        self.val.pack(fill="x", pady=(2, 0))
+        self.bind("<Configure>", lambda e: self._fitfont(), add="+")
+
+    def set(self, value, rag=None):
+        card, cap, val = _KPI[self.variant]
+        if rag and self.variant == "plain":  # status colours only on plain cards
+            val, card = T.RAG.get(rag, (val, card))
+        self.recolor(card)
+        self.cap.configure(bg=card, fg=cap)
+        self.value = value or "—"
+        self.val.configure(text=self.value, fg=val, bg=card)
+        self._fitfont()
+        self.after(50, self._fitfont)  # again once the card has its final width
+
+    def _fitfont(self):
+        """Largest font that fits the card; a long value ("Resolved-Completed") goes on two lines rather than
+        being cut."""
+        room = self.winfo_width() - 2 * self.pad - 8
+        if room <= 0:
+            return
+        text = getattr(self, "value", self.val.cget("text"))
+        cut = max(text.find("-"), text.find(" "))
+        options = [(text, s) for s in (20, 17, 15, 13, 12)]
+        if cut > 0:  # two lines, split after the hyphen / at the space
+            two = text[:cut + 1].rstrip() + "\n" + text[cut + 1:].lstrip()
+            options += [(two, s) for s in (13, 12, 11, 10)]
+        options += [(text, s) for s in (11, 10, 9)]
+        for shown, size in options:
+            f = tkfont.Font(family=T.FONT, size=size, weight="bold")
+            if max(f.measure(line) for line in shown.split("\n")) <= room:
+                break
+        self.val.configure(text=shown, font=(T.FONT, size, "bold"), justify="left")
+
+
+class Tooltip:
+    """A small dark label under a widget while the mouse is over it."""
+
+    def __init__(self, widget, text):
+        self.widget, self.text, self.tip = widget, text, None
+        widget.bind("<Enter>", self.show, add="+")
+        widget.bind("<Leave>", self.hide, add="+")
+
+    def show(self, _e=None):
+        if self.tip or not self.text:
+            return
+        w = self.widget
+        self.tip = tk.Toplevel(w)
+        self.tip.wm_overrideredirect(True)
+        self.tip.attributes("-topmost", True)
+        tk.Label(self.tip, text=self.text, bg=T.DARK, fg="white", font=T.F_SMALL, padx=8, pady=4).pack()
+        self.tip.update_idletasks()
+        x = w.winfo_rootx() + w.winfo_width() // 2 - self.tip.winfo_reqwidth() // 2
+        self.tip.geometry(f"+{x}+{w.winfo_rooty() + w.winfo_height() + 6}")
+
+    def hide(self, _e=None):
+        if self.tip:
+            self.tip.destroy()
+            self.tip = None
+
+
+class IconButton(tk.Label):
+    """A square icon button (Segoe MDL2 glyph) with a tooltip; configure(state="disabled") greys it out."""
+
+    def __init__(self, parent, icon, tip, command, size=None):
+        k = _scale(parent)
+        super().__init__(parent, text=icon, font=(T.ICONS, 13), bg=T.FIELD, fg=T.INK, cursor="hand2",
+                         width=3, pady=int(6 * k / 1.5) + 4)
+        self._command, self._state = command, "normal"
+        self.bind("<Button-1>", lambda e: self._state == "normal" and self._command())
+        self.bind("<Enter>", lambda e: self._state == "normal" and tk.Label.configure(self, bg=T.BUTTON_HOVER), add="+")
+        self.bind("<Leave>", lambda e: tk.Label.configure(self, bg=T.FIELD), add="+")
+        Tooltip(self, tip)
+
+    def configure(self, cnf=None, **kw):
+        if "state" in kw:
+            self._state = kw.pop("state")
+            kw["fg"] = T.INK if self._state == "normal" else "#B8BDC4"
+            kw["cursor"] = "hand2" if self._state == "normal" else ""
+        return tk.Label.configure(self, cnf, **kw)
+
+    config = configure
