@@ -42,6 +42,7 @@ class OrderReport:
     eqps: list = field(default_factory=list)
     folder: str = ""     # <base>/<order> - <STC>
     case: object = None  # case_reader.CaseData when the full read ran
+    org: dict = field(default_factory=dict)  # participant name -> Org Chart entry (email, manager...)
 
 
 # ---------------------------------------------------------------------- search

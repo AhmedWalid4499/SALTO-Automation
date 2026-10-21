@@ -26,6 +26,7 @@ How to answer:
 - If an order is not loaded, call open_order (it takes a few minutes); say so briefly first.
 - Serial numbers come from FLIP (part serial_numbers): each SALTO device of an EQP matched to its FLIP part by OBS \
 name and model. Accessories (power supplies, SFPs) have their own serials in the parts list. If FLIP gave none, say so.
+- Emails, job titles and managers of people come from the Orange Business Org Chart: part people has them for the order's participants once looked up (org_chart); for anyone else, or for a manager's manager, call find_person. Customer contacts (e.g. @skf.com) are not in the Org Chart: their email is in the Site / Commercial Content tabs.
 - If a field exists nowhere, say that plainly and offer the closest fields that do exist (device Name, USID, Model...).
 - Where the data comes from matters: say which case and tab you took it from, e.g. "Site tab of MLAN-215851".
 - Device lists: the TS tab has, per product node, the devices in scope of work and all devices on the site; \
@@ -65,6 +66,24 @@ TOOLS = [
                 "part": {"type": "string", "enum": PARTS},
             },
             "required": ["order_ref", "part"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "name": "find_person",
+        "description": ("Look a person up in the Orange Business Org Chart (Orange staff and contractors only, not "
+                        "customer contacts): email, job title, department, country, phone, and their management chain "
+                        "(manager first, then the manager's manager...) with emails. Give the last name and/or first "
+                        "name, or an email. Partial names work."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "last_name": {"type": "string", "description": "Last name (may be empty)"},
+                "first_name": {"type": "string", "description": "First name (may be empty)"},
+                "email": {"type": "string", "description": "Email address (may be empty)"},
+            },
+            "required": ["last_name", "first_name", "email"],
             "additionalProperties": False,
         },
         "strict": True,
@@ -129,8 +148,22 @@ def order_part(rep, part):
                 "all_flip_parts": [dict(p, EQP=c.stc_id) for c in eqps for p in c.flip.get("parts", [])],
                 "errors": [e for c in eqps for e in c.flip.get("errors", [])] or None}
     if part == "people":
-        return [{"case": c.stc_id, "type": c.title,
-                 "people": [{"name": p.name, "role": p.role or p.party} for p in c.participants]} for c in case.walk()]
+        org = getattr(rep, "org", {}) or {}
+        def who(p):
+            out = {"name": p.name, "role": p.role or p.party}
+            e = org.get(p.name)
+            if e and e.get("person"):
+                pe, m = e["person"], e.get("manager") or {}
+                out.update(org_chart={"email": pe["email"], "job_title": pe["busi_title"],
+                                      "department": pe["dept_desc"], "country": pe["country_descr"],
+                                      "phone": pe["phone"] or pe["mobile"], "manager": pe["supr_display_name"],
+                                      "manager_email": m.get("email", ""), "note": e.get("note", "")})
+            elif e:
+                out["org_chart"] = e.get("note", "not found")
+            return out
+        return {"org_chart_looked_up": bool(org),
+                "cases": [{"case": c.stc_id, "type": c.title, "people": [who(p) for p in c.participants]}
+                          for c in case.walk()]}
     if part == "case_tabs":
         return _case_dict(case)
     if part == "subcases":
@@ -158,10 +191,11 @@ class Assistant:
     """Conversation state + the tool loop. `reports` is shared with the Order explorer: {order_ref: OrderReport}.
     open_order(order_ref) must dissect the order (blocking) and return the OrderReport."""
 
-    def __init__(self, api_key, reports, open_order, log=print):
+    def __init__(self, api_key, reports, open_order, log=print, find_person=None):
         self.client = anthropic.Anthropic(api_key=api_key, max_retries=3, timeout=180)
         self.reports = reports
         self.open_order = open_order
+        self.find_person = find_person
         self.log = log
         self.messages = []
         self.stop = threading.Event()
@@ -171,6 +205,15 @@ class Assistant:
 
     def _tool(self, name, args, status):
         ref = (args.get("order_ref") or "").strip()
+        if name == "find_person":
+            if not self.find_person:
+                return _json({"error": "The Org Chart is not available here."}), True
+            who = " ".join(x for x in (args.get("first_name"), args.get("last_name"), args.get("email")) if x)
+            status(f"Looking up {who} in the Org Chart...")
+            people = self.find_person(args.get("last_name", ""), args.get("first_name", ""), args.get("email", ""))
+            return _json({"matches": people[:10], "count": len(people)} if people else
+                         {"matches": [], "note": "Nobody with this name in the Org Chart (customer contacts are "
+                                                 "not in it)."}), False
         if name == "get_order":
             rep = self.reports.get(ref)
             if not rep:

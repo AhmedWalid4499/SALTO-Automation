@@ -153,6 +153,7 @@ class OrderExplorer(Feature):
                   keep_callback=pending)
         if not pending:
             cache.save(rep)
+            self._org_lookup(rep)
             return
         self.app.busy(True, "Reading sub-cases and FLIP...")
         self._progress(True)
@@ -183,6 +184,7 @@ class OrderExplorer(Feature):
             cache.save(rep)
         if self.rep is rep:
             self._refresh_live(note="")
+        self._org_lookup(rep)
         cb, self._callback = getattr(self, "_callback", None), None
         if cb:
             cb(rep, None)
@@ -431,16 +433,69 @@ class OrderExplorer(Feature):
 
     def _people_page(self):
         case = self.rep.case
+        org = getattr(self.rep, "org", {}) or {}
         self._clear("People")
         rows, seen = [], set()
         for c in case.walk():
             for p in c.participants:
                 if (p.name, p.role) not in seen:
                     seen.add((p.name, p.role))
-                    rows.append({"Name": p.name, "Role": p.role or p.party, "Case": f"{c.stc_id} · {c.title}"})
+                    e = org.get(p.name) or {}
+                    pe, m = e.get("person") or {}, e.get("manager") or {}
+                    rows.append({"Name": p.name, "Role": p.role or p.party, "Email": pe.get("email", ""),
+                                 "Job title": pe.get("busi_title", ""), "Country": pe.get("country_descr", ""),
+                                 "Manager": pe.get("supr_display_name", ""), "Manager email": m.get("email", ""),
+                                 "Case": f"{c.stc_id} · {c.title}",
+                                 "Org Chart": e.get("note", "") if e else ""})
         f = tk.Frame(self.pages["People"], bg=T.CARD)
         f.pack(fill="both", expand=True, padx=10, pady=10)
-        Table(f, ["Name", "Role", "Case"], rows, height=20).pack(fill="both", expand=True)
+        head = tk.Frame(f, bg=T.CARD)
+        head.pack(fill="x", pady=(0, 6))
+        found = sum(1 for r in rows if r["Email"])
+        busy = getattr(self, "_org_busy", False)
+        text = ("Looking up emails and managers in the Org Chart..." if busy else
+                f"Emails and managers from the Orange Business Org Chart: {found} of {len(rows)} found "
+                "(customer contacts are not in it)." if org else "Emails and managers come from the Org Chart.")
+        tk.Label(head, text=text, bg=T.CARD, fg=T.MUTED, font=T.F_SMALL, anchor="w").pack(side="left")
+        ttk.Button(head, text="Copy emails", command=lambda: self._copy_emails(rows)).pack(side="right")
+        ttk.Button(head, text="Refresh", state="disabled" if busy else "normal",
+                   command=lambda: self._org_lookup(self.rep, refresh=True)).pack(side="right", padx=6)
+        Table(f, ["Name", "Role", "Email", "Job title", "Manager", "Manager email", "Country", "Case", "Org Chart"],
+              rows, height=20).pack(fill="both", expand=True)
+
+    def _copy_emails(self, rows):
+        emails = list(dict.fromkeys(e for r in rows for e in (r["Email"], r["Manager email"]) if e))
+        self.app.root.clipboard_clear()
+        self.app.root.clipboard_append("; ".join(emails))
+        self.app.log(f"{len(emails)} email(s) copied (people and their managers).")
+
+    def _org_lookup(self, rep, refresh=False):
+        """Emails, job titles and managers of the participants, from the Org Chart (in the background)."""
+        if not rep.case or getattr(self, "_org_busy", False):
+            return
+        names = list(dict.fromkeys(p.name for c in rep.case.walk() for p in c.participants))
+        if not names:
+            return
+        from salto import orgchart
+        self._org_busy = True
+        if self.rep is rep:
+            self._people_page()
+
+        def done(result):
+            self._org_busy = False
+            rep.org = result
+            cache.save(rep)
+            if self.rep is rep:
+                self._people_page()
+                self._notify()
+
+        def failed(exc):
+            self._org_busy = False
+            self.app.log(f"Org Chart: {errors.friendly(exc)}")
+            if self.rep is rep:
+                self._people_page()
+
+        self.run(lambda b: orgchart.lookup(b, names, log=self.app.log, refresh=refresh), done, failed)
 
     # ---- Case tabs (main case): list of its SALTO tabs | detail
     def _case_tabs_page(self):

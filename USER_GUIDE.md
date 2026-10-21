@@ -20,7 +20,7 @@ The top of the page shows the order, its stage bar (green done, blue current, gr
 - Summary: the key facts - status, stage, dates, scope of work, people, sub-cases.
 - Devices: the TS tab - switch between 'Scope of work' and 'All devices'.
 - FLIP serial numbers: the serial number of every EQP device, read from FLIP.
-- People: every participant of the case and its sub-cases.
+- People: every participant of the case and its sub-cases, with their email, job title, manager and manager's email from the Org Chart ('Copy emails' copies them all).
 - Case tabs: SALTO's own tabs of the main case (Overview, Site, Information...).
 - Sub-cases: pick EQP, CONF, SG, INV... on the left; its tabs appear as buttons.
 - Files: attachments (download what you need) and your screenshots.
@@ -70,6 +70,15 @@ Files keep their format (PDF, Excel, .msg...). E-mails stored in SALTO are saved
 ## Where files are saved
 
 Everything for an order goes to <Save folder>\<GOLD order> - <STC>\ with Downloads\ (one folder per case) and Screenshots\. Export to Excel saves <order>.xlsx there. Change the save folder in Settings (default: Documents\SALTO Buddy). 'Open folder' opens it.
+
+## Org Chart (emails and managers)
+
+SALTO Buddy reads the Orange Business Org Chart for you: a person's email, job title, department, phone and who they report to, with every manager's email.
+
+- People tab of an order: filled by itself once the order is read (a few seconds). Customer contacts are not in the Org Chart: their emails are in the Site and Commercial Content tabs.
+- Org Chart tab: type a last name, a first name or an email (partial names work) and press Enter. Select a person to see their management chain: manager, 2nd-level manager and so on, with emails.
+- Ask Buddy: 'What is the email of Ahmed Khairy's manager?' works too.
+- Results are kept for a week; 'Refresh' in the People tab reads them again.
 
 ## Ask Buddy (chat)
 

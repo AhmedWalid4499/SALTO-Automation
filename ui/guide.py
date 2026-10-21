@@ -36,7 +36,8 @@ GUIDE = [
         ("list", ["Summary: the key facts - status, stage, dates, scope of work, people, sub-cases.",
                   "Devices: the TS tab - switch between 'Scope of work' and 'All devices'.",
                   "FLIP serial numbers: the serial number of every EQP device, read from FLIP.",
-                  "People: every participant of the case and its sub-cases.",
+                  "People: every participant of the case and its sub-cases, with their email, job title, manager and "
+                  "manager's email from the Org Chart ('Copy emails' copies them all).",
                   "Case tabs: SALTO's own tabs of the main case (Overview, Site, Information...).",
                   "Sub-cases: pick EQP, CONF, SG, INV... on the left; its tabs appear as buttons.",
                   "Files: attachments (download what you need) and your screenshots."]),
@@ -88,6 +89,16 @@ GUIDE = [
         ("p", "Everything for an order goes to <Save folder>\\<GOLD order> - <STC>\\ with Downloads\\ (one folder "
               "per case) and Screenshots\\. Export to Excel saves <order>.xlsx there. Change the save folder in "
               "Settings (default: Documents\\SALTO Buddy). 'Open folder' opens it."),
+    ]),
+    ("Org Chart (emails and managers)", [
+        ("p", "SALTO Buddy reads the Orange Business Org Chart for you: a person's email, job title, department, "
+              "phone and who they report to, with every manager's email."),
+        ("list", ["People tab of an order: filled by itself once the order is read (a few seconds). Customer contacts "
+                  "are not in the Org Chart: their emails are in the Site and Commercial Content tabs.",
+                  "Org Chart tab: type a last name, a first name or an email (partial names work) and press Enter. "
+                  "Select a person to see their management chain: manager, 2nd-level manager and so on, with emails.",
+                  "Ask Buddy: 'What is the email of Ahmed Khairy's manager?' works too.",
+                  "Results are kept for a week; 'Refresh' in the People tab reads them again."]),
     ]),
     ("Ask Buddy (chat)", [
         ("p", "Ask questions about an order in your own words, for example 'What is the site address?', "
@@ -201,7 +212,9 @@ def show_whats_new(app):
 
     def page_new(d):
         d.title("What's new")
-        for s in ["Ask Buddy answers are clearer: the answer first, then short sections, tables for devices and serial "
+        for s in ["New: Org Chart - emails, job titles and managers (with their emails) of everyone on an order, and "
+                  "an Org Chart tab to find anyone at Orange Business with their management chain.",
+                  "Ask Buddy answers are clearer: the answer first, then short sections, tables for devices and serial "
                   "numbers, and where it comes from. 'Copy answer' pastes cleanly into Outlook or Excel.",
                   "New: HOTO preparation - the HOTO sheet of a LAN order, filled for you (devices in creation), "
                   "ready to save as Excel or paste into your HOTO document.",

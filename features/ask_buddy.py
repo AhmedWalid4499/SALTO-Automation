@@ -136,7 +136,8 @@ class AskBuddy(Feature):
             key, source = self._fetch_team_key(status), "cache"
         if not self.bot or self.bot_key != key:
             from salto.assistant import Assistant
-            self.bot = Assistant(key, self.app.reports, self._open_order, log=self.app.log)
+            self.bot = Assistant(key, self.app.reports, self._open_order, log=self.app.log,
+                                 find_person=self._find_person)
             self.bot_key = key
         return source
 
@@ -152,6 +153,18 @@ class AskBuddy(Feature):
         if box.get("err"):
             raise box["err"]
         return box.get("rep")
+
+    def _find_person(self, last, first, email):
+        """find_person tool (chat thread): Org Chart search through the browser worker, blocking."""
+        from salto import orgchart
+        done, box = threading.Event(), {}
+        self.app.worker.submit(lambda b: orgchart.find(b, last, first, email, log=self.app.log),
+                               lambda r: (box.update(r=r), done.set()),
+                               lambda exc: (box.update(err=exc), done.set()))
+        done.wait()
+        if box.get("err"):
+            raise box["err"]
+        return box["r"]
 
     # ------------------------------------------------------------ send
     def send(self):
