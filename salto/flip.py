@@ -20,7 +20,7 @@ from contextlib import suppress
 from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.common.by import By
 
-from . import files
+from . import errors, files
 
 # capture FLIP's own part-list API answers (the table paginator is unreliable)
 _HOOK_JS = r"""
@@ -160,7 +160,7 @@ def fetch_parts(b, url, save_dir="", label="", log=print, timeout=90):
             try:  # the Excel copy is a bonus: never lose the serial numbers over it
                 export = _export(b, save_dir, label)
             except (OSError, WebDriverException) as exc:
-                log(f"FLIP export not saved: {str(exc).splitlines()[0][:120]}")
+                log(f"FLIP export not saved: {errors.note(exc)}")
         return parts, export
     finally:
         with suppress(WebDriverException):
@@ -283,7 +283,7 @@ def read_eqp(b, eqp_id, folder="", log=print):
             if export:
                 result["exports"].append(export)
         except (WebDriverException, RuntimeError, OSError) as exc:
-            result["errors"].append(f"{eqp_id} / FLIP {dev['Intervention']}: {str(exc).splitlines()[0][:120]}")
+            result["errors"].append(f"{eqp_id} / FLIP {dev['Intervention']}: {errors.note(exc)}")
     from .case import enter_case
     with suppress(WebDriverException):
         enter_case(b, eqp_id)

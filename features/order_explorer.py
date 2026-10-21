@@ -8,7 +8,7 @@ import tkinter as tk
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
-from salto import cache, capture, config, files
+from salto import cache, capture, config, errors, files
 from salto.actions import order_lookup, read_stages
 from salto.case import Options, download_attachments, read_subcases
 from salto.export import export_report
@@ -178,7 +178,7 @@ class OrderExplorer(Feature):
             if sc.stc_id.startswith("EQP-") and sc.stc_id not in rep.eqps:
                 rep.eqps.append(sc.stc_id)
         if exc:
-            self.app.log(f"Reading sub-cases stopped: {str(exc).splitlines()[0]}")
+            self.app.log(f"Reading sub-cases stopped: {errors.note(exc)}")
         if not rep.case.pending_subs:
             cache.save(rep)
         if self.rep is rep:
@@ -228,8 +228,7 @@ class OrderExplorer(Feature):
         if cb:  # opened from Ask Buddy: the chat reports the error
             cb(None, exc)
             return
-        messagebox.showerror("SALTO Buddy", f"Opening the order failed: {str(exc).splitlines()[0]}\n\n"
-                                            "Click 'Show activity' at the bottom for details.")
+        messagebox.showerror("SALTO Buddy", f"The order could not be opened.\n\n{errors.friendly(exc)}")
 
     def shot(self):
         folder = files.sub(self._folder(), "Screenshots")
@@ -309,9 +308,9 @@ class OrderExplorer(Feature):
         self._subcases_page()
         self._files_page()
         self.tabs.select(0)
-        errors = [e for c in case.walk() for e in c.errors]
-        if errors:
-            self.app.log("Could not read: " + "; ".join(errors))
+        problems = [e for c in case.walk() for e in c.errors]
+        if problems:
+            self.app.log("Could not read: " + "; ".join(problems), quiet=True)
         self._notify()
 
     def _attachments(self):
@@ -395,7 +394,7 @@ class OrderExplorer(Feature):
         serials = [s for c in eqps for s in c.flip.get("serials", [])]
         parts = [dict(p, EQP=c.stc_id) for c in eqps for p in c.flip.get("parts", [])]
         exports = [x for c in eqps for x in c.flip.get("exports", [])]
-        errors = [e for c in eqps for e in c.flip.get("errors", [])]
+        problems = [e for c in eqps for e in c.flip.get("errors", [])]
         if not serials:
             d = DetailView(page)
             d.pack(fill="both", expand=True)
@@ -403,7 +402,7 @@ class OrderExplorer(Feature):
             d.note_body("No EQP sub-case was read for this order." if not eqps else
                         "FLIP was not read (turn on 'Get serial numbers from FLIP for EQPs' in Settings)."
                         if not self.app.cfg.get("flip", True) else "No serial numbers could be read from FLIP.")
-            for e in errors:
+            for e in problems:
                 d.note(e)
             return
         # devices: sized to their rows; the parts list below takes the remaining space
@@ -427,7 +426,7 @@ class OrderExplorer(Feature):
                  anchor="w").pack(fill="x", pady=(8, 4))
         Table(low, ["Device", "Part number", "Serial number", "Description", "Status", "Condition", "Request",
                     "Type", "EQP"], parts, height=10).pack(fill="both", expand=True)
-        for e in errors:
+        for e in problems:
             tk.Label(low, text=e, bg=T.CARD, fg=T.RED, font=T.F_SMALL, anchor="w").pack(fill="x")
 
     def _people_page(self):

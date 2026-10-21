@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urlparse
 
 from selenium.common.exceptions import TimeoutException, WebDriverException
 
+from . import errors
 from .config import TEAM_KEY_FILE
 
 TEAM_KEY_LINK = ("https://orange0-my.sharepoint.com/:f:/g/personal/ahmed_elbourgy_ext_orange_com/"
@@ -86,7 +87,7 @@ def fetch(b, link=TEAM_KEY_LINK, log=print, timeout=300):
     try:
         res = d.execute_async_script(_FETCH_JS, link, TEAM_KEY_FILE.lower()) or {}
     except WebDriverException as exc:
-        raise RuntimeError(f"could not read the team folder: {str(exc).splitlines()[0][:120]}")
+        raise RuntimeError(f"could not read the team folder: {errors.note(exc)}")
     if not res.get("key"):
         raise RuntimeError(f"could not read the team key: {res.get('error', 'empty file')}")
     log("Ask Buddy: team key ready.")

@@ -11,7 +11,8 @@ from contextlib import suppress
 from urllib.parse import urlparse
 
 from selenium import webdriver
-from selenium.common.exceptions import (NoSuchElementException,
+from selenium.common.exceptions import (ElementClickInterceptedException,
+                                        NoSuchElementException,
                                         StaleElementReferenceException,
                                         WebDriverException)
 from selenium.webdriver.common.by import By
@@ -33,6 +34,14 @@ _SAVE_MIME = ",".join([
     "application/vnd.ms-outlook", "message/rfc822", "text/csv", "text/plain", "text/xml", "application/xml",
     "image/png", "image/jpeg", "image/gif", "application/vnd.visio", "application/x-msg",
 ])
+
+# Pega's grey overlay while it is busy: it swallows clicks (here, or in the top page)
+_MASK_JS = r"""
+const shown = doc => [...doc.querySelectorAll('#screen-layout-mask, .screen-layout-mask')].some(m => {
+  const s = getComputedStyle(m); return m.offsetWidth && s.display !== 'none' && s.visibility !== 'hidden'; });
+let top = false; try { top = window.top !== window && shown(window.top.document); } catch (e) {}
+return shown(document) || top;
+"""
 
 
 class LoginTimeout(RuntimeError):
@@ -258,6 +267,20 @@ class SaltoBrowser:
             if time.time() > deadline:
                 raise NoSuchElementException(f"Not found: {xpath}")
             time.sleep(0.5)
+
+    def click(self, el, timeout=30):
+        """Click like a user, once SALTO's grey 'loading' mask is gone; a script click if something still covers el."""
+        d = self.driver
+        deadline = time.time() + timeout
+        while time.time() < deadline and d.execute_script(_MASK_JS):
+            time.sleep(0.3)
+        for _ in range(3):
+            try:
+                el.click()
+                return
+            except ElementClickInterceptedException:
+                time.sleep(1)
+        d.execute_script("arguments[0].scrollIntoView({block: 'center'}); arguments[0].click();", el)
 
     def frame_with_text(self, *texts, timeout=30):
         """Switch into the displayed frame whose text contains all given strings."""

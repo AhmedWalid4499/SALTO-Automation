@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from selenium.common.exceptions import NoSuchElementException, WebDriverException
 from selenium.webdriver.common.by import By
 
-from . import files
+from . import errors, files
 from .browser import SaltoBrowser
 
 with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "extract.js"), encoding="utf-8") as _f:
@@ -135,7 +135,7 @@ def _wait_stable(b, timeout=20):
 def open_tab(b: SaltoBrowser, name: str):
     tab = b.driver.find_element(By.XPATH, f"//*[@role='tab' and normalize-space(.)='{name}']")
     if tab.get_attribute("aria-selected") != "true":
-        tab.click()
+        b.click(tab)
     return _wait_stable(b)
 
 
@@ -300,7 +300,7 @@ def _download_rows(b, case_id, rows, folder, log):
         try:
             row["Saved as"] = _download_one(b, case_id, row["_index"], row, dest)
         except (WebDriverException, OSError) as exc:
-            row["Saved as"] = f"failed: {str(exc).splitlines()[0][:80]}"
+            row["Saved as"] = f"failed: {errors.note(exc)}"
             with suppress(WebDriverException):
                 _back_to_case(b, case_id)
 
@@ -324,7 +324,7 @@ def download_attachments(b, main_id, rows, folder, log=print):
             _download_rows(b, cid, items, folder, log)
         except WebDriverException as exc:
             for r in items:
-                r["Saved as"] = r["Saved as"] or f"failed: {str(exc).splitlines()[0][:80]}"
+                r["Saved as"] = r["Saved as"] or f"failed: {errors.note(exc)}"
         finally:
             if cid != main_id:
                 with suppress(WebDriverException):
@@ -453,7 +453,7 @@ def _device_grid(b):
 def _set_scope(b, on):
     lab, cb = _scope_checkbox(b)
     if cb.is_selected() != on:
-        lab.click()
+        b.click(lab)
         _wait_stable(b)
 
 
@@ -469,7 +469,7 @@ def read_ts(b, log=print):
         target = el.find_elements(By.XPATH, ".//div[contains(@class,'oflowDiv')]")
         target = target[-1] if target else el
         b.driver.execute_script("arguments[0].scrollIntoView({block:'center'})", target)
-        target.click()
+        b.click(target)
         _wait_stable(b)
         all_g, scope_g, counts = {"headers": [], "rows": []}, {"headers": [], "rows": []}, []
         try:
@@ -503,7 +503,7 @@ def open_subcase(b, parent_id, sub_id):
     if not link:
         raise NoSuchElementException(f"link to {sub_id} not found")
     b.driver.execute_script("arguments[0].scrollIntoView({block:'center'})", link[0])
-    link[0].click()
+    b.click(link[0])
     enter_case(b, sub_id, timeout=60)
     time.sleep(0.5)
 
@@ -570,7 +570,7 @@ def read_case(b: SaltoBrowser, case_id: str, opts: Options = None, log=print, re
                 data.screenshots.append(shot)
                 enter_case(b, case_id)
         except (WebDriverException, IndexError) as exc:
-            msg = f"{case_id} / {name}: {str(exc).splitlines()[0][:120]}"
+            msg = f"{case_id} / {name}: {errors.note(exc)}"
             log("  could not read " + msg)
             data.errors.append(msg)
             with suppress(WebDriverException):
@@ -582,7 +582,7 @@ def read_case(b: SaltoBrowser, case_id: str, opts: Options = None, log=print, re
             data.flip = flip.read_eqp(b, case_id, opts.folder, log)
             data.errors += data.flip.get("errors", [])
         except Exception as exc:  # FLIP trouble never stops the rest of the order
-            data.errors.append(f"{case_id} / FLIP: {str(exc).splitlines()[0][:120]}")
+            data.errors.append(f"{case_id} / FLIP: {errors.note(exc)}")
             with suppress(WebDriverException):
                 enter_case(b, case_id, timeout=15)
 
@@ -613,7 +613,7 @@ def read_subcases(b, data, opts, log=print, read_stages=None, on_each=None):
             sub = read_case(b, sid, opts, log, read_stages, depth=1)
             data.subcases.append(sub)
         except Exception as exc:  # one bad sub-case never stops the others
-            data.errors.append(f"{sid}: {str(exc).splitlines()[0][:120]}")
+            data.errors.append(f"{sid}: {errors.note(exc)}")
             log(f"  could not open {sid}")
         finally:
             data.pending_subs.pop(0)
@@ -632,7 +632,7 @@ def _focus_case_tab(b, case_id):
     d.switch_to.default_content()
     for li in d.find_elements(By.XPATH, f"//li[@role='tab' and starts-with(@aria-label, '{case_id} ')]"):
         if li.get_attribute("aria-selected") != "true":
-            li.click()
+            b.click(li)
             time.sleep(0.8)
         return True
     return False

@@ -5,8 +5,8 @@ Tk window never freezes while SALTO is loading.
 """
 import queue
 import threading
-import traceback
 
+from . import errors
 from .browser import SaltoBrowser
 
 
@@ -31,8 +31,8 @@ class BrowserWorker:
                 if on_done:
                     on_done(result)
             except Exception as exc:  # report to the GUI, keep the worker alive
-                self.log(f"ERROR: {exc}")
-                self.log(traceback.format_exc(limit=3))
+                errors.record(exc)  # technical details: error.log only
+                self.log(errors.friendly(exc))
                 if on_error:
                     on_error(exc)
 

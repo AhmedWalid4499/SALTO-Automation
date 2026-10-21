@@ -4,7 +4,7 @@ import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from salto import config, keystore
+from salto import config, errors, keystore
 from ui import rich
 from ui import theme as T
 
@@ -244,4 +244,4 @@ def _friendly(exc):
         return "Could not reach Claude (api.anthropic.com). Check the network / VPN."
     if isinstance(exc, anthropic.APIStatusError):
         return f"Claude returned an error ({exc.status_code}). Try again."
-    return f"Something went wrong: {str(exc).splitlines()[0][:200]}"
+    return f"Something went wrong: {errors.note(exc)}"

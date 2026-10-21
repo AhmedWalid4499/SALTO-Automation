@@ -13,7 +13,7 @@ from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
 from features import FEATURES
-from salto import config, keystore, updater
+from salto import config, errors, keystore, updater
 from salto.version import APP_NAME, __version__
 from salto.worker import BrowserWorker
 from ui import guide
@@ -193,7 +193,7 @@ class App:
         os.makedirs(config.CONFIG_DIR, exist_ok=True)
         with open(ERROR_LOG, "a", encoding="utf-8") as f:
             f.write(f"\n[{datetime.now():%Y-%m-%d %H:%M:%S}]\n" + "".join(traceback.format_exception(exc, val, tb)))
-        messagebox.showerror(APP_NAME, f"Something went wrong: {val}\n\nDetails: {ERROR_LOG}")
+        messagebox.showerror(APP_NAME, f"Something went wrong. {errors.friendly(val)}")
 
     # ------------------------------------------------------------ settings
     def show_settings(self):

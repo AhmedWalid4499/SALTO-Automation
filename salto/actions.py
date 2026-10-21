@@ -12,7 +12,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 
 from . import case as case_reader
-from .browser import SaltoBrowser
+from .browser import _MASK_JS, SaltoBrowser
 
 STC_ID_RE = re.compile(r"^[A-Z]{2,8}-\d{4,}$")
 EQP_RE = re.compile(r"\((EQP-\d+)\)")
@@ -54,17 +54,17 @@ def open_stc_search(b: SaltoBrowser):
     open_tab = [t for t in b.driver.find_elements(By.XPATH, "//li[@role='tab' and starts-with(@aria-label, 'STC Search')]")
                 if t.is_displayed()]
     if open_tab:
-        open_tab[0].click()
+        b.click(open_tab[0])
         b.find_visible("//label[contains(normalize-space(.), 'Commercial Order Ref')]", timeout=30)
         return
     # On wide windows SALTO pins the menu open and hides the toggle; on narrow ones it is collapsed
     if not any(e.is_displayed() for e in b.driver.find_elements(By.XPATH, item_xp)):
         for t in b.driver.find_elements(By.XPATH, toggle_xp):
             if t.is_displayed():
-                t.click()
+                b.click(t)
                 time.sleep(1)
                 break
-    b.find_visible(item_xp).click()
+    b.click(b.find_visible(item_xp))
     # The search form lives in its own frame
     b.find_visible("//label[contains(normalize-space(.), 'Commercial Order Ref')]", timeout=30)
 
@@ -87,7 +87,7 @@ def search_order(b: SaltoBrowser, order_ref: str):
     rows = _wait_rows(b, order_ref, timeout=8)
     if not rows:  # Enter didn't trigger the search on this form: use the button
         with suppress(NoSuchElementException):
-            b.driver.find_element(By.XPATH, "//button[normalize-space(.)='Search']").click()
+            b.click(b.driver.find_element(By.XPATH, "//button[normalize-space(.)='Search']"))
         rows = _wait_rows(b, order_ref, timeout=40)
     b.log(f"{len(rows)} result row(s).")
     return rows
@@ -120,20 +120,36 @@ def _wait_rows(b: SaltoBrowser, order_ref, timeout):
 def open_case(b: SaltoBrowser, stc_id: str):
     """Double-click the first result cell with this STC ID (a single click only selects the row)."""
     b.log(f"Opening {stc_id}...")
-    cell = b.find_visible(f"//td[normalize-space(.)='{stc_id}']")
-    # Results are often below the fold; the mouse can only act inside the viewport
-    b.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", cell)
-    time.sleep(0.5)
-    try:
-        ActionChains(b.driver).move_to_element(cell).double_click(cell).perform()
-    except WebDriverException:
-        b.log("Mouse double-click failed, using a script double-click instead.")
-        b.driver.execute_script(
-            "const t = arguments[0].querySelector('*') || arguments[0];"
-            "['mousedown','mouseup','click','mousedown','mouseup','click','dblclick'].forEach(n =>"
-            "  t.dispatchEvent(new MouseEvent(n, {bubbles: true, cancelable: true, view: window, detail: n==='dblclick'?2:1})));",
-            cell)
-    b.frame_with_text(f"({stc_id})", "Overview", timeout=60)
+    for attempt, wait in enumerate((45, 90)):
+        if attempt:
+            b.log(f"SALTO is slow to open {stc_id}; trying again...")
+            try:  # it may have opened meanwhile, the results no longer on screen
+                b.frame_with_text(f"({stc_id})", "Overview", timeout=3)
+                break
+            except NoSuchElementException:
+                pass
+        b.driver.switch_to.default_content()
+        cell = b.find_visible(f"//td[normalize-space(.)='{stc_id}']")
+        # Results are often below the fold; the mouse can only act inside the viewport
+        b.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", cell)
+        deadline = time.time() + 30
+        while time.time() < deadline and b.driver.execute_script(_MASK_JS):  # SALTO still busy: clicks are lost
+            time.sleep(0.3)
+        time.sleep(0.5)
+        try:
+            ActionChains(b.driver).move_to_element(cell).double_click(cell).perform()
+        except WebDriverException:
+            b.driver.execute_script(
+                "const t = arguments[0].querySelector('*') || arguments[0];"
+                "['mousedown','mouseup','click','mousedown','mouseup','click','dblclick'].forEach(n =>"
+                "  t.dispatchEvent(new MouseEvent(n, {bubbles: true, cancelable: true, view: window, detail: n==='dblclick'?2:1})));",
+                cell)
+        try:
+            b.frame_with_text(f"({stc_id})", "Overview", timeout=wait)
+            break
+        except NoSuchElementException:
+            if attempt:
+                raise
     time.sleep(1.5)  # let the stage bar and overview tree render
 
 
@@ -194,7 +210,7 @@ def read_eqps(b: SaltoBrowser):
     with suppress(NoSuchElementException, WebDriverException):
         tab = b.driver.find_element(By.XPATH, "//*[@role='tab' and normalize-space(.)='Overview']")
         if tab.get_attribute("aria-selected") != "true":
-            tab.click()
+            b.click(tab)
             time.sleep(2)
     text = b.driver.execute_script("return document.body.textContent || ''")
     found = []
