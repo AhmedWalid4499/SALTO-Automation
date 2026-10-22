@@ -105,6 +105,15 @@ Ask questions about an order in your own words, for example 'What is the site ad
 2. Click SALTO Bot in the menu, type your question and press Enter.
 3. The bot reads the order and answers as it writes, saying which case and tab the answer comes from.
 
+### Documents
+
+Click the paperclip next to the message box to attach Word (.docx), PDF or text files - a customer request, a HOTO or handover form, an email saved as text. Add a question, or just press Send: the bot reads the document and does what it asks when it can.
+
+- It looks up the orders the document names (and opens them in SALTO if needed), checks the document against SALTO and FLIP (devices, models, serial numbers, sites, contacts) and tells you what matches and what differs.
+- It finds people in the Org Chart, prepares the HOTO Excel sheet or exports an order to Excel when the document asks for it. Files it creates appear as 'Open ...' buttons under its answer.
+- It never changes anything in SALTO and never sends emails: if the document asks for that, it tells you what to do.
+- Old Word files (.doc): open them in Word and save them as .docx first. Attached documents are sent to Claude (Anthropic) with your question.
+
 Chats are saved on this PC and listed on the left, grouped by order number: click one to read it again or to continue it (Buddy remembers the conversation). '+ New chat' starts a fresh one; right-click a chat to delete it.
 
 Answers start with the short answer, then the details: bullets for a few facts, a table for lists (devices, serial numbers, sub-cases...). Click a table's column title to sort it. 'Copy answer' under each answer copies it as clean text: tables paste as columns in Excel and as text in Outlook.

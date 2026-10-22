@@ -27,8 +27,11 @@ def new(question, current=""):
             "title": re.sub(r"\s+", " ", question).strip()[:70], "created": now, "updated": now, "turns": []}
 
 
-def add_turn(chat, question, answer):
-    chat["turns"].append({"q": question, "a": answer, "time": time.time()})
+def add_turn(chat, question, answer, documents=(), created=()):
+    """documents: files attached to the question (their text is kept so the chat can be continued; a PDF keeps
+    only its name). created: files the bot's actions made."""
+    docs = [{"name": d["name"], "kind": d["kind"], "text": d.get("text", "")} for d in documents]
+    chat["turns"].append({"q": question, "a": answer, "time": time.time(), "docs": docs, "created": list(created)})
     chat["updated"] = time.time()
     save(chat)
 
@@ -77,5 +80,9 @@ def history_messages(chat):
     """The conversation as plain user/assistant turns, so a reopened chat can be continued."""
     msgs = []
     for t in chat.get("turns", []):
-        msgs += [{"role": "user", "content": t["q"]}, {"role": "assistant", "content": t["a"]}]
+        docs = [{"type": "document", "title": d["name"],
+                 "source": {"type": "text", "media_type": "text/plain", "data": d["text"]}}
+                for d in t.get("docs", []) if d.get("text")]
+        user = docs + [{"type": "text", "text": t["q"] or "Here is a document."}] if docs else t["q"]
+        msgs += [{"role": "user", "content": user}, {"role": "assistant", "content": t["a"]}]
     return msgs

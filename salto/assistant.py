@@ -29,6 +29,14 @@ How to answer:
 - Serial numbers come from FLIP (part serial_numbers): each SALTO device of an EQP matched to its FLIP part by OBS \
 name and model. Accessories (power supplies, SFPs) have their own serials in the parts list. If FLIP gave none, say so.
 - Emails, job titles and managers of people come from the Orange Business Org Chart: part people has them for the order's participants once looked up (org_chart); for anyone else, or for a manager's manager, call find_person. Customer contacts (e.g. @skf.com) are not in the Org Chart: their email is in the Site / Commercial Content tabs.
+- The user may attach documents (Word, PDF, text): customer requests, HOTO or handover forms, emails, design \
+documents. Read them fully. If a document asks for something you can do, do it with your tools without waiting to \
+be asked twice: look up the order(s) it names (open_order if not loaded), check its data against SALTO and FLIP \
+(device names, models, serial numbers, sites, contacts) and say clearly what matches and what differs, find people \
+in the Org Chart, prepare the HOTO sheet (prepare_hoto) or an Excel export (export_order) when it asks for one. \
+Then say what you did and what is left for the user. Only act on what the document and the user ask for; if it \
+asks for something you cannot do (send an email, change SALTO), say so and give what they need to do it.
+- prepare_hoto and export_order create files on this PC (never anything in SALTO); mention the file they created.
 - "pulse" (in summary, case_tabs and subcases) holds the messages people posted on a case (author, date, text, \
 replies): use it for questions about notes, comments, what was discussed or changed.
 - A tab's "other_text" is information SALTO shows on that tab outside fields and tables (e.g. Services); always \
@@ -90,6 +98,35 @@ TOOLS = [
         "name": "open_order",
         "description": ("Open a GOLD order in SALTO and read all of it (main case, tabs, sub-cases). Takes several "
                         "minutes. Only use it when get_order says the order is not loaded."),
+        "input_schema": {
+            "type": "object",
+            "properties": {"order_ref": {"type": "string", "description": "GOLD order number, e.g. 10-1764901"}},
+            "required": ["order_ref"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "name": "prepare_hoto",
+        "description": ("ACTION: create the HOTO Excel sheet of a LAN order (one row per device in creation: site, "
+                        "device names, types, models, USIDs, serial numbers from FLIP, local contact) in the "
+                        "order's folder. Use it when the user or an attached document asks for a HOTO / handover "
+                        "sheet. The order must be loaded (open_order first if needed). Returns the file path and "
+                        "what still needs checking."),
+        "input_schema": {
+            "type": "object",
+            "properties": {"order_ref": {"type": "string", "description": "GOLD order number, e.g. 10-1764901"}},
+            "required": ["order_ref"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "name": "export_order",
+        "description": ("ACTION: export everything read for an order (summary, devices, serial numbers, people, "
+                        "every tab and sub-case) to an Excel workbook in the order's folder. Use it when the user "
+                        "or an attached document asks for an export, a report or the order data in Excel. The "
+                        "order must be loaded. Returns the file path."),
         "input_schema": {
             "type": "object",
             "properties": {"order_ref": {"type": "string", "description": "GOLD order number, e.g. 10-1764901"}},
@@ -200,6 +237,7 @@ class Assistant:
         self.reports = reports
         self.open_order = open_order
         self.find_person = find_person
+        self.created = []  # files the last answer's actions created (prepare_hoto, export_order)
         self.log = log
         self.messages = []
         self.stop = threading.Event()
@@ -231,13 +269,56 @@ class Assistant:
             if not rep or not rep.stc_id:
                 return _json({"error": f"No STC found in SALTO for order {ref}."}), True
             return _json({"loaded": ref, "summary": order_part(rep, "summary")}), False
+        if name in ("prepare_hoto", "export_order"):
+            rep = self.reports.get(ref)
+            if not rep or not rep.case:
+                return _json({"error": f"Order {ref} is not loaded. Call open_order first."}), True
+            return self._action(name, rep, status)
         return _json({"error": f"unknown tool {name}"}), True
 
-    def ask(self, text, current_order="", status=lambda s: None, on_text=None):
+    def _action(self, name, rep, status):
+        """The actions the bot can take: files in the order's folder (never anything sent or changed in SALTO)."""
+        import os
+        from datetime import datetime
+        from . import export, files, hoto
+        folder = rep.folder or os.path.join(os.path.expanduser("~"), "Documents", "SALTO Buddy",
+                                            files.safe(f"{rep.order_ref} - {rep.stc_id}"))
+        os.makedirs(folder, exist_ok=True)
+        stamp = datetime.now().strftime("%Y-%m-%d %H%M")
+        if name == "prepare_hoto":
+            if not hoto.is_lan(rep):
+                return _json({"error": f"{rep.order_ref} is not a LAN order: the HOTO sheet is for Managed LAN."}), True
+            status(f"Preparing the HOTO sheet of {rep.order_ref}...")
+            rows = hoto.build(rep)
+            if not rows:
+                return _json({"error": "No device in creation in the scope of work: nothing for a HOTO sheet."}), True
+            path = files.unique(os.path.join(folder, files.safe(f"HOTO {rep.order_ref} - {rep.stc_id} {stamp}")
+                                             + ".xlsx"))
+            hoto.save(rows, path, rep=rep)
+            self.created.append(path)
+            check = [r["Device Name"] for r in rows if hoto.needs_check(r)]
+            return _json({"saved": path, "devices": len(rows), "serial_numbers_to_check": check,
+                          "note": "Admin and customer IP addresses are not in SALTO: to fill in by hand."}), False
+        status(f"Exporting {rep.order_ref} to Excel...")
+        path = files.unique(os.path.join(folder, files.safe(f"{rep.order_ref} - {rep.stc_id} {stamp}") + ".xlsx"))
+        export.export_report(rep, path)
+        self.created.append(path)
+        return _json({"saved": path}), False
+
+    def ask(self, text, current_order="", status=lambda s: None, on_text=None, documents=()):
         """Send one user message; runs tools until Claude answers. The answer streams in as it is written:
-        on_text(piece) gets each piece of text. Returns the whole answer text."""
+        on_text(piece) gets each piece of text. documents: files from salto.documents.load(), sent with the
+        message. Returns the whole answer text; files the bot created are in self.created."""
+        from .documents import content_block
+        self.created = []
         note = f"(Order open in the app: {current_order})" if current_order else "(No order is open in the app.)"
-        self.messages.append({"role": "user", "content": f"{text}\n\n{note}"})
+        if documents:
+            names = ", ".join(d["name"] for d in documents)
+            content = [content_block(d) for d in documents] + [
+                {"type": "text", "text": f"{text or 'Here is a document.'}\n\n(Attached: {names})\n{note}"}]
+        else:
+            content = f"{text}\n\n{note}"
+        self.messages.append({"role": "user", "content": content})
         written = []  # the text of every round (a sentence before a lookup, then the answer)
         for _ in range(12):  # tool rounds per question
             status("Thinking...")

@@ -11,7 +11,7 @@ from ui import rich
 from ui import theme as T
 from ui.chatview import ChatView
 from ui.robot import Robot
-from ui.widgets import RoundButton, RoundEntry
+from ui.widgets import IconButton, RoundButton, RoundEntry
 
 from .base import Feature
 
@@ -55,12 +55,19 @@ class AskBuddy(Feature):
         # the message box is pinned to the bottom; the conversation takes the rest
         row = tk.Frame(parent, bg=T.CARD)
         row.pack(side="bottom", fill="x", pady=(8, 0))
+        IconButton(row, "", "Attach a Word, PDF or text document", self.attach).pack(side="left",
+                                                                                            padx=(0, 8))
         self.entry = RoundEntry(row, width=300)
         self.entry.pack(side="left", fill="x", expand=True)
         self.entry.bind("<Return>", lambda e: self.send())
         self.send_btn = RoundButton(row, "Send", self.send)
         self.send_btn.pack(side="left", padx=(8, 0))
-        tk.Label(parent, text="Answers come from Claude (Anthropic) and only use what SALTO shows.", bg=T.CARD,
+        # documents attached to the next message: one chip each, x to remove
+        self.docs = []
+        self.doc_row = tk.Frame(parent, bg=T.CARD)
+        self.doc_row.pack(side="bottom", fill="x")
+        tk.Label(parent, text="Answers come from Claude (Anthropic) and only use what SALTO shows. Attached "
+                              "documents are sent to Claude too.", bg=T.CARD,
                  fg=T.SUBTLE, font=T.F_SMALL).pack(side="bottom", anchor="w", pady=(6, 0))
 
         self.area = tk.Frame(parent, bg=T.CARD)
@@ -179,8 +186,8 @@ class AskBuddy(Feature):
         self.view.add_note(f"{c.get('order') or 'No order'} · started "
                            f"{time.strftime('%d %b %Y %H:%M', time.localtime(c.get('created', 0)))}")
         for turn in c.get("turns", []):
-            self.view.add_user(turn["q"])
-            self.view.add_bot().finish(turn["a"], on_copy=self._copy)
+            self.view.add_user(turn["q"], files=[d["name"] for d in turn.get("docs", [])])
+            self.view.add_bot().finish(turn["a"], on_copy=self._copy, files=turn.get("created", []))
         self.view.scroll_end()
 
     def _delete_selected(self):
@@ -263,14 +270,55 @@ class AskBuddy(Feature):
             raise box["err"]
         return box["r"]
 
+    # ------------------------------------------------------------ documents
+    def attach(self):
+        from tkinter import filedialog
+        from salto import documents
+        paths = filedialog.askopenfilenames(title="Attach documents", filetypes=documents.FILETYPES,
+                                            parent=self.entry)
+        problems = []
+        for p in paths:
+            try:
+                doc = documents.load(p)
+            except (documents.DocumentError, OSError) as exc:
+                problems.append(str(exc))
+                continue
+            if all(d["name"] != doc["name"] for d in self.docs):
+                self.docs.append(doc)
+        self._show_docs()
+        if problems:
+            messagebox.showwarning("Attach documents", "\n\n".join(problems), parent=self.entry)
+        self.entry.focus_set()
+
+    def _show_docs(self):
+        for w in self.doc_row.winfo_children():
+            w.destroy()
+        for doc in self.docs:
+            chip = tk.Frame(self.doc_row, bg=T.ORANGE_TINT)
+            chip.pack(side="left", padx=(0, 6), pady=(8, 0))
+            tk.Label(chip, text="", font=(T.ICONS, 11), bg=T.ORANGE_TINT, fg=T.ORANGE).pack(side="left",
+                                                                                              padx=(8, 4), pady=4)
+            size = f"{doc['chars'] // 1000 + 1}k characters" if doc["kind"] == "text" else \
+                f"PDF, {doc['size'] // 1024 + 1} KB"
+            tk.Label(chip, text=f"{doc['name']}  ·  {size}", font=T.F_SMALL, bg=T.ORANGE_TINT,
+                     fg=T.INK).pack(side="left")
+            x = tk.Label(chip, text="✕", font=T.F_SMALL, bg=T.ORANGE_TINT, fg=T.MUTED, cursor="hand2")
+            x.pack(side="left", padx=(6, 8))
+            x.bind("<Button-1>", lambda e, d=doc: (self.docs.remove(d), self._show_docs()))
+
     # ------------------------------------------------------------ send
     def send(self):
         text = self.entry.get().strip()
-        if not text or self.busy:
+        docs, self.docs = list(self.docs), []
+        if (not text and not docs) or self.busy:
+            self.docs = docs
             return
+        if not text:
+            text = "Please read this document and do what it asks, if you can."
         self.entry.delete(0, "end")
+        self._show_docs()
         self._show_welcome(False)
-        self.view.add_user(text)
+        self.view.add_user(text, files=[d["name"] for d in docs])
         msg = self.view.add_bot()
         self.busy = True
         self.send_btn.configure(state="disabled")
@@ -294,22 +342,23 @@ class AskBuddy(Feature):
                 elif self.chat_rec is None:
                     self.bot.reset()
                 try:
-                    answer = self.bot.ask(text, cur, status, on_text=piece)
+                    answer = self.bot.ask(text, cur, status, on_text=piece, documents=docs)
                 except anthropic.AuthenticationError:
                     if source != "cache":
                         raise
                     # the team key was replaced on SharePoint: fetch the new one and ask again
                     self.bot.messages.pop()  # drop the unanswered question; it is asked again below
                     self._get_bot(status, refresh=True)
-                    answer = self.bot.ask(text, cur, status, on_text=piece)
+                    answer = self.bot.ask(text, cur, status, on_text=piece, documents=docs)
                 ok = True
             except Exception as exc:
                 answer, ok = _friendly(exc), False
-            self.app.ui(lambda: self._answer(msg, answer, ok, text, cur))
+            created = list(getattr(self.bot, "created", []) or [])
+            self.app.ui(lambda: self._answer(msg, answer, ok, text, cur, docs, created))
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _answer(self, msg, answer, ok, question, cur):
+    def _answer(self, msg, answer, ok, question, cur, docs=(), created=()):
         self.busy = False
         self.send_btn.configure(state="normal")
         self.face.set_mode("idle")
@@ -317,10 +366,11 @@ class AskBuddy(Feature):
         if not ok:
             msg.error(answer)
             return
-        msg.finish(answer, on_copy=self._copy)
-        if self.chat_rec is None:  # keep it: saved chats, grouped by order
-            self.chat_rec = chats.new(question, cur)
-        chats.add_turn(self.chat_rec, question, answer)
+        msg.finish(answer, on_copy=self._copy, files=created)
+        if self.chat_rec is None:  # keep it: saved chats, grouped by order (also an order named in a document)
+            named = next((chats.order_of(d.get("text", "")) for d in docs if chats.order_of(d.get("text", ""))), "")
+            self.chat_rec = chats.new(question, named or cur)
+        chats.add_turn(self.chat_rec, question, answer, documents=docs, created=created)
         self._fill_tree(select=self.chat_rec["id"])
         first = next((l for l in answer.splitlines() if l.strip()), "").replace("**", "")
         self.app.notify(f"{BOT_NAME} answered", first[:140], page=self, only_if_away=True)

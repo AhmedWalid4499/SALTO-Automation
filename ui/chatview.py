@@ -56,14 +56,21 @@ class ChatView(tk.Frame):
         self.canvas.yview_moveto(0)
 
     # ------------------------------------------------------------ messages
-    def add_user(self, text):
+    def add_user(self, text, files=()):
         row = tk.Frame(self.inner, bg=T.CARD)
         row.pack(fill="x", padx=12, pady=(10, 2))
         bubble = RoundCard(row, fill=USER_BUBBLE, radius=18, pad=12, fit=True, shadow=False)
         bubble.pack(side="right")
+        for name in files:  # attached documents, shown as small cards in the bubble
+            card = tk.Frame(bubble.inner, bg="#FF9433")
+            card.pack(anchor="e", pady=(0, 6))
+            tk.Label(card, text="\uE8A5", font=(T.ICONS, 11), bg="#FF9433", fg="white").pack(side="left", padx=(8, 4),
+                                                                                         pady=5)
+            tk.Label(card, text=name, font=T.F_SMALL_BOLD, bg="#FF9433", fg="white").pack(side="left", padx=(0, 10))
         lbl = tk.Label(bubble.inner, text=text, bg=USER_BUBBLE, fg="white", font=T.F_BODY, justify="left",
                        anchor="w")
-        lbl.pack()
+        if text:
+            lbl.pack(anchor="e")
         m = _UserMessage(self, bubble, lbl)
         self.messages.append(m)
         m.relayout()
@@ -151,7 +158,7 @@ class _BotMessage:
         self._set_text([(shown, "md_body")])
         self.view.scroll_end()
 
-    def finish(self, markdown, on_copy=None):
+    def finish(self, markdown, on_copy=None, files=()):
         self.done = True
         self.raw = markdown
         self.text.configure(state="normal")
@@ -160,6 +167,12 @@ class _BotMessage:
         self.text.delete("end-2c", "end-1c") if self.text.get("end-2c", "end-1c") == "\n" else None
         self.text.configure(state="disabled")
         self.relayout()
+        for path in files:  # files the bot's actions created: one click to open each
+            import os
+            b = tk.Label(self.actions, text=f"Open {os.path.basename(path)}", bg=T.ORANGE_TINT, fg=T.ORANGE,
+                         font=T.F_SMALL_BOLD, cursor="hand2", padx=10, pady=4)
+            b.pack(side="left", padx=(0, 8))
+            b.bind("<Button-1>", lambda e, p=path: os.path.exists(p) and os.startfile(p))
         if on_copy:
             link = tk.Label(self.actions, text="Copy", bg=T.CARD, fg=T.ORANGE, font=T.F_SMALL_BOLD,
                             cursor="hand2")

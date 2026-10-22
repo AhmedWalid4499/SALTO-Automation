@@ -126,6 +126,19 @@ GUIDE = [
         ("steps", ["Open an order in Order explorer (or just name the order in your question).",
                    "Click SALTO Bot in the menu, type your question and press Enter.",
                    "The bot reads the order and answers as it writes, saying which case and tab the answer comes from."]),
+        ("h", "Documents"),
+        ("p", "Click the paperclip next to the message box to attach Word (.docx), PDF or text files - a customer "
+              "request, a HOTO or handover form, an email saved as text. Add a question, or just press Send: the bot "
+              "reads the document and does what it asks when it can."),
+        ("list", ["It looks up the orders the document names (and opens them in SALTO if needed), checks the "
+                  "document against SALTO and FLIP (devices, models, serial numbers, sites, contacts) and tells you "
+                  "what matches and what differs.",
+                  "It finds people in the Org Chart, prepares the HOTO Excel sheet or exports an order to Excel when "
+                  "the document asks for it. Files it creates appear as 'Open ...' buttons under its answer.",
+                  "It never changes anything in SALTO and never sends emails: if the document asks for that, it "
+                  "tells you what to do.",
+                  "Old Word files (.doc): open them in Word and save them as .docx first. Attached documents are "
+                  "sent to Claude (Anthropic) with your question."]),
         ("p", "Chats are saved on this PC and listed on the left, grouped by order number: click one to read it "
               "again or to continue it (Buddy remembers the conversation). '+ New chat' starts a fresh one; "
               "right-click a chat to delete it."),
@@ -219,7 +232,9 @@ def show_whats_new(app):
 
     def page_new(d):
         d.title("What's new")
-        for s in ["Meet The Friendly SALTO Bot: a real chat with our robot - your messages and its answers in "
+        for s in ["The Friendly SALTO Bot reads documents: attach a Word, PDF or text file and it understands "
+                  "it and acts on it - looks up orders, checks them, prepares the HOTO or an Excel export.",
+                  "Meet The Friendly SALTO Bot: a real chat with our robot - your messages and its answers in "
                   "bubbles, and answers written live as it thinks, in a friendly tone.",
                   "New Home dashboard: your orders at a glance - key figures, charts and recent orders.",
                   "The Friendly SALTO Bot keeps your chats, grouped by order number: reopen one for quick info or continue it.",
