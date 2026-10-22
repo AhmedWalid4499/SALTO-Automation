@@ -22,7 +22,7 @@ _images = {}
 def logo(widget, base=40):
     """The SALTO Buddy logo as a PhotoImage sized for the screen scaling (kept alive here)."""
     k = _scale(widget)
-    px = min((40, 48, 64, 80, 96), key=lambda p: abs(p - base * k))
+    px = min((40, 48, 64), key=lambda p: abs(p - base * k))  # the sizes bundled with the app
     key = (str(widget.winfo_toplevel()), px)
     if key not in _images:
         path = os.path.join(_ASSETS, f"logo_{px}.png")
