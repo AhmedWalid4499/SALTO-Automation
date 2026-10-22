@@ -16,7 +16,7 @@ from .case import other_lines
 MODEL = "claude-opus-5-5"
 PARTS = ["summary", "devices", "serial_numbers", "people", "case_tabs", "subcases", "attachments", "audit", "search"]
 
-SYSTEM = """You are Buddy, the assistant inside SALTO Buddy, a desktop tool used by Orange Business delivery staff \
+SYSTEM = """You are the Friendly SALTO Bot, the chat assistant inside SALTO Buddy, a desktop tool used by Orange Business delivery staff \
 (DPMs, STMs, order managers). SALTO is Orange's Pega-based service transition tool. A GOLD order (e.g. 10-1764901) \
 has a main STC case (e.g. MLAN-215851) with tabs (Overview, TS, Commercial Content, Site, Information, Attachments, \
 Audit, Event) and sub-cases (EQP = Order And Deliver / equipment, CONF = Configure, SG = switch group, \
@@ -39,21 +39,13 @@ check it before saying something is not in SALTO.
 "in creation / added" means Cycle = Creation, "ceased / removed" means Cycle = Cessation.
 - Answer in the user's language.
 
-How to lay out the answer (the chat shows a small Markdown subset; people paste these answers into emails and \
-reports, so they must be clean and easy to scan):
-- First line: the direct answer in one sentence, with the key value(s) in **bold**. No preamble ("Sure", \
-"Let me check", "Based on the data"), no closing offers or questions unless something is truly ambiguous.
-- Then only the details that help. Use "### " headings only when the answer has two or more distinct groups \
-(e.g. "### Site" and "### Local contact"); keep headings to 1-3 words.
-- A few facts about one thing: one bullet each, written "- **Label:** value".
-- Several items that share 3 or more fields (devices, serial numbers, sub-cases, people, attachments): a Markdown \
-table with a header row and one row per item, ordered sensibly (e.g. by device name). List every item, never "...". \
-Keep columns to what was asked plus the identifying ones (device name, OBS name); at most 7 columns.
-- Missing or uncertain values: write "not in SALTO" or "not found in FLIP" in the cell, never leave it blank or guess. \
-If something needs the user's attention (e.g. FLIP lists several serial numbers for one device), say so in one \
-bullet after the table.
-- Last line, on its own: "Source: <case> > <tab>" (e.g. "Source: MLAN-215851 > Site tab; EQP-198834 > FLIP").
-- Use nothing else: no italics, links, code blocks, emojis, nested lists or horizontal rules. Be concise."""
+How to write (this is a chat window, like any AI assistant; your text appears as you write it):
+- Talk like a friendly, helpful colleague: natural sentences, warm but to the point. Start with the answer itself, not with "Sure" or "Based on the data".
+- Short questions get a short answer: one or two sentences, with the key value in **bold**.
+- For more detail, use short paragraphs. Use a "- " list only for several separate facts, and a Markdown table only for several items that share fields (devices, serial numbers, sub-cases, people): one row per item, every item, at most 7 columns. Headings ("### ") only for long answers with distinct parts.
+- Missing or uncertain values: say so plainly ("that is not in SALTO", "FLIP has no serial number for it"); never guess. If something needs the user's attention (e.g. several serial numbers in FLIP for one device), mention it.
+- End with a short line saying where it comes from: "Source: <case> > <tab>". If a natural next step would help, you may offer it in one short sentence.
+- Use only plain text, **bold**, lists, tables and headings: no italics, links, code blocks or emojis."""
 
 TOOLS = [
     {
@@ -241,13 +233,18 @@ class Assistant:
             return _json({"loaded": ref, "summary": order_part(rep, "summary")}), False
         return _json({"error": f"unknown tool {name}"}), True
 
-    def ask(self, text, current_order="", status=lambda s: None):
-        """Send one user message; runs tools until Claude answers. Returns the answer text."""
+    def ask(self, text, current_order="", status=lambda s: None, on_text=None):
+        """Send one user message; runs tools until Claude answers. The answer streams in as it is written:
+        on_text(piece) gets each piece of text. Returns the whole answer text."""
         note = f"(Order open in the app: {current_order})" if current_order else "(No order is open in the app.)"
         self.messages.append({"role": "user", "content": f"{text}\n\n{note}"})
+        written = []  # the text of every round (a sentence before a lookup, then the answer)
         for _ in range(12):  # tool rounds per question
             status("Thinking...")
-            response = self.client.beta.messages.create(
+            if written and on_text:
+                on_text("\n\n")  # a new round continues the same message on a new paragraph
+            parts = []
+            with self.client.beta.messages.stream(
                 model=MODEL,
                 max_tokens=16000,
                 system=SYSTEM,
@@ -257,13 +254,21 @@ class Assistant:
                 cache_control={"type": "ephemeral"},
                 betas=["server-side-fallback-2026-07-01"],
                 fallbacks="default",
-            )
+            ) as stream:
+                for event in stream:
+                    if event.type == "text":
+                        parts.append(event.text)
+                        if on_text:
+                            on_text(event.text)
+                response = stream.get_final_message()
             # keep the assistant turn exactly as returned (thinking blocks must be passed back unchanged)
             self.messages.append({"role": "assistant", "content": response.content})
+            if "".join(parts).strip():
+                written.append("".join(parts).strip())
             if response.stop_reason == "refusal":
                 return "Sorry, I can't help with that request."
             if response.stop_reason != "tool_use":
-                return "".join(b.text for b in response.content if b.type == "text").strip() or "(no answer)"
+                return "\n\n".join(written) or "(no answer)"
             results = []
             for block in response.content:
                 if block.type != "tool_use":

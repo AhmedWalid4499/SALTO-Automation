@@ -103,7 +103,7 @@ class App:
                 def found():
                     self.cfg["team_key_dir"] = config.portable(folder)
                     config.save(self.cfg)
-                    self.log(f"Ask Buddy: found the team key in {folder}", quiet=True)
+                    self.log(f"SALTO Bot: found the team key in {folder}", quiet=True)
                     for feat in self.features:
                         getattr(feat, "key_changed", lambda: None)()
                 self.ui(found)
@@ -131,7 +131,8 @@ class App:
 
         tk.Label(box, text="MENU", bg=T.CARD, fg=T.SUBTLE, font=T.F_CAPS).pack(anchor="w", padx=12, pady=(0, 6))
         for i, cls in enumerate(FEATURES):
-            item = NavItem(box, getattr(cls, "icon", "\uE80F"), cls.title, lambda i=i: self.select(i))
+            item = NavItem(box, getattr(cls, "icon", "\uE80F"), getattr(cls, "nav_title", cls.title),
+                           lambda i=i: self.select(i))
             item.pack(fill="x", pady=1)
             self.nav.append(item)
 
@@ -249,13 +250,13 @@ class App:
 
     # ------------------------------------------------------------ settings
     def show_settings(self):
-        w, body = self._dialog("Settings", 640, "Folders, what SALTO Buddy reads, notifications and Ask Buddy")
+        w, body = self._dialog("Settings", 640, "Folders, what SALTO Buddy reads, notifications and the SALTO Bot")
         tabs = ttk.Notebook(body, style="Inner.TNotebook")
         tabs.pack(fill="both", expand=True)
         f = ttk.Frame(tabs, style="Card.TFrame", padding=(4, 12, 4, 4))
         tabs.add(f, text="General")
         ask = ttk.Frame(tabs, style="Card.TFrame", padding=(4, 12, 4, 4))
-        tabs.add(ask, text="Ask Buddy")
+        tabs.add(ask, text="SALTO Bot")
         ttk.Label(f, text="Folders", style="Section.TLabel").grid(row=0, column=0, columnspan=3, sticky="w")
         ttk.Label(f, text="Save folder (each order gets '<order> - <STC>' with Downloads and Screenshots)",
                   style="Muted.TLabel").grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 2))
@@ -283,7 +284,7 @@ class App:
         # Ask Buddy: Claude API key, stored encrypted for this Windows user (DPAPI) - its own tab
         f = ask
         f.columnconfigure(0, weight=1)
-        ttk.Label(f, text="Ask Buddy", style="Section.TLabel").grid(row=13, column=0, columnspan=3, sticky="w", pady=(16, 4))
+        ttk.Label(f, text="The Friendly SALTO Bot", style="Section.TLabel").grid(row=13, column=0, columnspan=3, sticky="w", pady=(16, 4))
         ttk.Label(f, text="Claude API key (from console.anthropic.com). Questions and the order data they need are "
                           "sent to Anthropic.", style="Muted.TLabel", wraplength=500).grid(row=14, column=0, columnspan=3,
                                                                                            sticky="w")

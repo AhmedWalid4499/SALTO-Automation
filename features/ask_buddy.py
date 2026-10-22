@@ -1,20 +1,22 @@
-"""Ask Buddy: chat with Claude about the orders SALTO Buddy has read."""
+"""The Friendly SALTO Bot: a chat with Claude about the orders SALTO Buddy has read."""
 import os
 import threading
+import time
 import tkinter as tk
 from tkinter import ttk
-
-import time
 
 from salto import chats, config, errors, keystore
 from ui import dialogs as messagebox
 from ui import rich
 from ui import theme as T
+from ui.chatview import ChatView
+from ui.robot import Robot
 from ui.widgets import RoundButton, RoundEntry
 
 from .base import Feature
 
-# chip label -> the question it asks
+BOT_NAME = "The Friendly SALTO Bot"
+# suggestion label -> the question it asks
 EXAMPLES = {"Site address": "What is the site address and who is the local contact?",
             "Serial numbers": "Serial numbers of the devices in creation",
             "Delivery manager": "Who is the local delivery manager, and what is their email?",
@@ -22,83 +24,91 @@ EXAMPLES = {"Site address": "What is the site address and who is the local conta
 
 
 class AskBuddy(Feature):
-    title = "Ask Buddy"
-    icon = "\uE8BD"
-    subtitle = "Ask anything about an order, in your own words"
+    title = BOT_NAME
+    icon = ""
+    subtitle = "Chat about any order, in your own words"
+    nav_title = "SALTO Bot"
 
     def build(self, parent):
         self.bot = None
         self.bot_key = ""
         self.busy = False
         self.chat_rec = None   # the saved chat on screen (None: a new chat, saved after its first answer)
-        self._history = None   # turns of a reopened chat, given to Buddy before the next question
+        self._history = None   # turns of a reopened chat, given to the bot before the next question
         self._history_panel(parent)
         parent = tk.Frame(parent, bg=T.CARD)
         parent.pack(side="left", fill="both", expand=True)
+
+        # header: the robot (it thinks when the bot works), its name, which order is open
         head = tk.Frame(parent, bg=T.CARD)
         head.pack(fill="x")
-        self.ctx = tk.Label(head, text="", bg=T.CARD, fg=T.MUTED, font=T.F_SMALL)
-        self.ctx.pack(side="left", padx=12)
-        tk.Label(parent, text="Answers come from Claude (Anthropic) and only use what SALTO shows.", bg=T.CARD,
-                 fg=T.MUTED, font=T.F_SMALL, anchor="w").pack(fill="x", pady=(2, 8))
+        k = max(1.0, parent.winfo_fpixels("1i") / 96)
+        self.face = Robot(head, size=int(46 * k), shadow=False, bg=T.CARD)
+        self.face.pack(side="left")
+        names = tk.Frame(head, bg=T.CARD)
+        names.pack(side="left", padx=(8, 0))
+        tk.Label(names, text=BOT_NAME, bg=T.CARD, fg=T.INK, font=T.F_BOLD, anchor="w").pack(anchor="w")
+        self.ctx = tk.Label(names, text="", bg=T.CARD, fg=T.MUTED, font=T.F_SMALL, anchor="w")
+        self.ctx.pack(anchor="w")
+        tk.Frame(parent, bg=T.LINE, height=1).pack(fill="x", pady=(8, 0))
 
-        # input row and example chips are pinned to the bottom; the conversation takes the rest
+        # the message box is pinned to the bottom; the conversation takes the rest
         row = tk.Frame(parent, bg=T.CARD)
-        row.pack(side="bottom", fill="x", pady=(4, 0))
+        row.pack(side="bottom", fill="x", pady=(8, 0))
         self.entry = RoundEntry(row, width=300)
         self.entry.pack(side="left", fill="x", expand=True)
         self.entry.bind("<Return>", lambda e: self.send())
         self.send_btn = RoundButton(row, "Send", self.send)
         self.send_btn.pack(side="left", padx=(8, 0))
-        chips = tk.Frame(parent, bg=T.CARD)
-        chips.pack(side="bottom", fill="x", pady=(8, 4))
-        for label, question in EXAMPLES.items():
-            c = RoundButton(chips, label, lambda q=question: (self.entry.delete(0, "end"), self.entry.insert(0, q),
-                                                              self.send()), kind="soft", padx=12, height=30,
-                            font=T.F_SMALL)
-            c.pack(side="left", padx=(0, 6))
+        tk.Label(parent, text="Answers come from Claude (Anthropic) and only use what SALTO shows.", bg=T.CARD,
+                 fg=T.SUBTLE, font=T.F_SMALL).pack(side="bottom", anchor="w", pady=(6, 0))
 
-        box = tk.Frame(parent, bg=T.CARD, highlightthickness=1, highlightbackground=T.LINE)
-        box.pack(fill="both", expand=True)
-        self.chat = tk.Text(box, wrap="word", borderwidth=0, highlightthickness=0, bg=T.CARD, fg=T.INK, font=T.F_BODY,
-                            padx=16, pady=12, state="disabled", spacing1=2, spacing3=2, cursor="arrow")
-        sb = ttk.Scrollbar(box, orient="vertical", command=self.chat.yview)
-        self.chat.configure(yscrollcommand=sb.set)
-        sb.pack(side="right", fill="y")
-        self.chat.pack(fill="both", expand=True)
-        self.chat.tag_configure("you_name", font=T.F_SMALL_BOLD, foreground=T.ORANGE, spacing1=10)
-        self.chat.tag_configure("you", background=T.ORANGE_TINT, lmargin1=8, lmargin2=8, rmargin=60, spacing3=6)
-        self.chat.tag_configure("bot_name", font=T.F_SMALL_BOLD, foreground=T.MUTED, spacing1=10)
-        self.chat.tag_configure("bot", lmargin1=8, lmargin2=8, rmargin=20, spacing3=6)
-        self.chat.tag_configure("status", font=T.F_SMALL, foreground=T.MUTED, lmargin1=8)
-        self.chat.tag_configure("error", foreground=T.RED, lmargin1=8, lmargin2=8)
-        self.chat.tag_configure("copy", font=T.F_SMALL, foreground=T.ORANGE, lmargin1=8, spacing1=2, spacing3=8)
-        rich.setup(self.chat)
-        self.answers = 0
-
-        self._welcome()
+        self.area = tk.Frame(parent, bg=T.CARD)
+        self.area.pack(fill="both", expand=True)
+        self.view = ChatView(self.area, BOT_NAME)
+        self.welcome = self._welcome_screen(self.area)
+        self._show_welcome(True)
         parent.bind("<Map>", lambda e: self._update_ctx())
 
+    # ------------------------------------------------------------ welcome screen
+    def _welcome_screen(self, parent):
+        w = tk.Frame(parent, bg=T.CARD)
+        box = tk.Frame(w, bg=T.CARD)
+        box.place(relx=0.5, rely=0.45, anchor="center")
+        k = max(1.0, parent.winfo_fpixels("1i") / 96)
+        Robot(box, size=int(110 * k), bg=T.CARD).pack()
+        tk.Label(box, text=f"Hi! I'm {BOT_NAME}", bg=T.CARD, fg=T.INK, font=T.F_TITLE).pack(pady=(6, 2))
+        tk.Label(box, text="Ask me anything about an order: its site, devices, serial numbers, people or sub-cases.",
+                 bg=T.CARD, fg=T.MUTED, font=T.F_SMALL, wraplength=int(360 * k), justify="center").pack()
+        chips = tk.Frame(box, bg=T.CARD)
+        chips.pack(pady=(14, 0))
+        for i, (label, question) in enumerate(EXAMPLES.items()):
+            RoundButton(chips, label, lambda q=question: self._ask_example(q), kind="soft", padx=14, height=32,
+                        font=T.F_SMALL).grid(row=i // 2, column=i % 2, padx=4, pady=4)
+        return w
+
+    def _show_welcome(self, on):
+        if on:
+            self.view.pack_forget()
+            self.welcome.pack(fill="both", expand=True)
+        else:
+            self.welcome.pack_forget()
+            self.view.pack(fill="both", expand=True)
+
+    def _ask_example(self, question):
+        self.entry.delete(0, "end")
+        self.entry.insert(0, question)
+        self.send()
+
     # ------------------------------------------------------------ helpers
-    def _put(self, text, *tags):
-        self.chat.configure(state="normal")
-        self.chat.insert("end", text, tags)
-        self.chat.see("end")
-        self.chat.configure(state="disabled")
-
-    def _welcome(self):
-        self._put("Buddy\n", "bot_name")
-        self._put("Hi! Open an order in Order explorer, or just name one here, and ask me about it.\n", "bot")
-
     def _current(self):
         ex = self.app.explorer
         return ex.rep.order_ref if ex and ex.rep and ex.rep.stc_id else ""
 
     def _update_ctx(self):
         cur = self._current()
-        loaded = list(self.app.reports)
-        self.ctx.configure(text=(f"Current order: {cur}" if cur else "No order open")
-                           + (f"   ·   loaded: {', '.join(loaded)}" if loaded else ""))
+        self.ctx.configure(text=("Working..." if self.busy else "Online") + "   ·   "
+                           + (f"order open: {cur}" if cur else "no order open"))
 
     def new_chat(self):
         if self.busy:
@@ -106,10 +116,8 @@ class AskBuddy(Feature):
         if self.bot:
             self.bot.reset()
         self.chat_rec, self._history = None, None
-        self.chat.configure(state="normal")
-        self.chat.delete("1.0", "end")
-        self.chat.configure(state="disabled")
-        self._welcome()
+        self.view.clear()
+        self._show_welcome(True)
         self.tree.selection_remove(self.tree.selection())
         self.entry.focus_set()
 
@@ -125,7 +133,7 @@ class AskBuddy(Feature):
         box.pack(fill="both", expand=True)
         k = max(1.0, parent.winfo_fpixels("1i") / 96)
         self.tree = ttk.Treeview(box, show="tree", style="Nav.Treeview", selectmode="browse")
-        self.tree.column("#0", width=int(215 * k))
+        self.tree.column("#0", width=int(185 * k))
         self.tree.pack(side="left", fill="both", expand=True, padx=4, pady=4)
         self.tree.tag_configure("order", font=T.F_SMALL_BOLD, foreground=T.MUTED)
         self.tree.bind("<<TreeviewSelect>>", lambda e: self._open_selected())
@@ -165,18 +173,15 @@ class AskBuddy(Feature):
         if not c:
             return
         self.chat_rec = c
-        self._history = chats.history_messages(c)  # Buddy continues this conversation
-        self.chat.configure(state="normal")
-        self.chat.delete("1.0", "end")
-        self.chat.configure(state="disabled")
-        self._put(f"{c.get('order') or 'No order'} · started "
-                  f"{time.strftime('%d %b %Y %H:%M', time.localtime(c.get('created', 0)))}\n", "status")
+        self._history = chats.history_messages(c)  # the bot continues this conversation
+        self._show_welcome(False)
+        self.view.clear()
+        self.view.add_note(f"{c.get('order') or 'No order'} · started "
+                           f"{time.strftime('%d %b %Y %H:%M', time.localtime(c.get('created', 0)))}")
         for turn in c.get("turns", []):
-            self._put("You\n", "you_name")
-            self._put(turn["q"] + "\n", "you")
-            self._put("Buddy\n", "bot_name")
-            self._show_answer(turn["a"])
-        self.chat.see("end")
+            self.view.add_user(turn["q"])
+            self.view.add_bot().finish(turn["a"], on_copy=self._copy)
+        self.view.scroll_end()
 
     def _delete_selected(self):
         sel = self.tree.selection()
@@ -191,9 +196,7 @@ class AskBuddy(Feature):
             self.new_chat()
         self._fill_tree()
 
-    def _ensure_bot(self):
-        return True  # the key is resolved on the chat thread (it may need SharePoint): see _get_bot
-
+    # ------------------------------------------------------------ Claude key
     def _local_key(self):
         """(key, source) from: own key, synced team file, team key cached from SharePoint, environment."""
         cfg = self.app.cfg
@@ -208,7 +211,7 @@ class AskBuddy(Feature):
     def _fetch_team_key(self, status):
         """Blocking (chat thread): read the team key from the SharePoint link through the browser worker."""
         from salto import teamkey
-        status("Getting the team key from SharePoint (first time only)...")
+        status("Getting the team key from SharePoint (first time only)")
         done, box = threading.Event(), {}
         self.app.worker.submit(lambda b: teamkey.fetch(b, log=self.app.log),
                                lambda key: (box.update(key=key), done.set()),
@@ -238,9 +241,9 @@ class AskBuddy(Feature):
     def key_changed(self):
         self.bot = None  # rebuilt with the new key on the next question
 
-    # ------------------------------------------------------------ open_order tool: dissect through the browser worker
+    # ------------------------------------------------------------ tools that need the browser (chat thread, blocking)
     def _open_order(self, ref):
-        """Called from the chat thread; blocks until the Order explorer has read the order."""
+        """open_order tool: blocks until the Order explorer has read the order."""
         done, box = threading.Event(), {}
         self.app.ui(lambda: self.app.explorer.open_for_chat(ref, lambda rep, err: (box.update(rep=rep, err=err), done.set())))
         done.wait()
@@ -249,7 +252,7 @@ class AskBuddy(Feature):
         return box.get("rep")
 
     def _find_person(self, last, first, email):
-        """find_person tool (chat thread): Org Chart search through the browser worker, blocking."""
+        """find_person tool: Org Chart search through the browser worker."""
         from salto import orgchart
         done, box = threading.Event(), {}
         self.app.worker.submit(lambda b: orgchart.find(b, last, first, email, log=self.app.log),
@@ -263,91 +266,68 @@ class AskBuddy(Feature):
     # ------------------------------------------------------------ send
     def send(self):
         text = self.entry.get().strip()
-        if not text or self.busy or not self._ensure_bot():
+        if not text or self.busy:
             return
         self.entry.delete(0, "end")
-        self._put("You\n", "you_name")
-        self._put(f"{text}\n", "you")
-        self._put("Buddy\n", "bot_name")
-        self.chat.configure(state="normal")
-        self.chat.insert("end", "Thinking...\n", ("status", "pending"))
-        self.chat.configure(state="disabled")
+        self._show_welcome(False)
+        self.view.add_user(text)
+        msg = self.view.add_bot()
         self.busy = True
         self.send_btn.configure(state="disabled")
+        self.face.set_mode("thinking")
+        self._update_ctx()
         cur = self._current()
 
-        def status(msg):
-            def upd():
-                self.chat.configure(state="normal")
-                r = self.chat.tag_ranges("pending")
-                if r:
-                    self.chat.delete(r[0], r[1])
-                    self.chat.insert(r[0], msg + "\n", ("status", "pending"))
-                self.chat.configure(state="disabled")
-            self.app.ui(upd)
+        def status(s):
+            self.app.ui(lambda: msg.typing(s))
+
+        def piece(s):
+            self.app.ui(lambda: msg.stream(s))
 
         def work():
             import anthropic
             try:
                 source = self._get_bot(status)
-                if self._history is not None:  # a reopened chat: Buddy continues it
+                if self._history is not None:  # a reopened chat: the bot continues it
                     self.bot.messages = list(self._history)
                     self._history = None
                 elif self.chat_rec is None:
                     self.bot.reset()
                 try:
-                    answer = self.bot.ask(text, cur, status)
+                    answer = self.bot.ask(text, cur, status, on_text=piece)
                 except anthropic.AuthenticationError:
                     if source != "cache":
                         raise
                     # the team key was replaced on SharePoint: fetch the new one and ask again
                     self.bot.messages.pop()  # drop the unanswered question; it is asked again below
                     self._get_bot(status, refresh=True)
-                    answer = self.bot.ask(text, cur, status)
-                tag = "bot"
+                    answer = self.bot.ask(text, cur, status, on_text=piece)
+                ok = True
             except Exception as exc:
-                answer, tag = _friendly(exc), "error"
-            self.app.ui(lambda: self._answer(answer, tag, text, cur))
+                answer, ok = _friendly(exc), False
+            self.app.ui(lambda: self._answer(msg, answer, ok, text, cur))
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _answer(self, answer, tag, question="", cur=""):
-        self.chat.configure(state="normal")
-        r = self.chat.tag_ranges("pending")
-        if r:
-            self.chat.delete(r[0], r[1])
-        self.chat.configure(state="disabled")
-        if tag == "bot":
-            self._show_answer(answer)
-        else:
-            self._put(answer + "\n", tag)
+    def _answer(self, msg, answer, ok, question, cur):
         self.busy = False
         self.send_btn.configure(state="normal")
+        self.face.set_mode("idle")
         self._update_ctx()
-        if tag == "bot" and question:  # keep it: saved chats, grouped by order
-            if self.chat_rec is None:
-                self.chat_rec = chats.new(question, cur)
-            chats.add_turn(self.chat_rec, question, answer)
-            self._fill_tree(select=self.chat_rec["id"])
-            first = next((l for l in answer.splitlines() if l.strip()), "").replace("**", "")
-            self.app.notify("Buddy answered", first[:140], page=self, only_if_away=True)
-
-    def _show_answer(self, answer):
-        """Formatted answer (headings, bullets, bold, tables) and a Copy link under it."""
-        self.answers += 1
-        link = f"copy{self.answers}"
-        self.chat.configure(state="normal")
-        rich.render(self.chat, answer)
-        self.chat.insert("end", "Copy answer\n", ("copy", link))
-        self.chat.tag_bind(link, "<Button-1>", lambda e, t=answer: self._copy(t))
-        self.chat.tag_bind(link, "<Enter>", lambda e: self.chat.configure(cursor="hand2"))
-        self.chat.tag_bind(link, "<Leave>", lambda e: self.chat.configure(cursor="arrow"))
-        self.chat.see("end")
-        self.chat.configure(state="disabled")
+        if not ok:
+            msg.error(answer)
+            return
+        msg.finish(answer, on_copy=self._copy)
+        if self.chat_rec is None:  # keep it: saved chats, grouped by order
+            self.chat_rec = chats.new(question, cur)
+        chats.add_turn(self.chat_rec, question, answer)
+        self._fill_tree(select=self.chat_rec["id"])
+        first = next((l for l in answer.splitlines() if l.strip()), "").replace("**", "")
+        self.app.notify(f"{BOT_NAME} answered", first[:140], page=self, only_if_away=True)
 
     def _copy(self, answer):
-        self.chat.clipboard_clear()
-        self.chat.clipboard_append(rich.plain(answer))
+        self.app.root.clipboard_clear()
+        self.app.root.clipboard_append(rich.plain(answer))
         self.app.log("Answer copied.")
 
 

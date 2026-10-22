@@ -2,7 +2,7 @@
 
 ## Getting started
 
-SALTO Buddy reads a GOLD order in SALTO for you and shows everything in one place: stage, devices, people, every tab, every sub-case and every attachment. It can also answer questions about an order in plain language (Ask Buddy).
+SALTO Buddy reads a GOLD order in SALTO for you and shows everything in one place: stage, devices, people, every tab, every sub-case and every attachment. It can also answer questions about an order in plain language (The Friendly SALTO Bot).
 
 1. Connect to the Orange network (VPN if you work remotely).
 2. Open SALTO Buddy from the Start Menu or the desktop shortcut.
@@ -23,7 +23,7 @@ Home shows the orders read on this PC at a glance: how many, in progress or comp
 
 ## Notifications
 
-When a task is done - an order fully read (sub-cases and serial numbers included), an Ask Buddy answer, downloads - a SALTO Buddy card appears at the bottom right of the screen and the taskbar button flashes if you are in another window. Click Open to go straight to it.
+When a task is done - an order fully read (sub-cases and serial numbers included), a SALTO Bot answer, downloads - a SALTO Buddy card appears at the bottom right of the screen and the taskbar button flashes if you are in another window. Click Open to go straight to it.
 
 - Settings > General: 'Notify me when a task is done' turns them on or off.
 - 'Play a sound with notifications' adds a short sound.
@@ -49,7 +49,7 @@ For every EQP of the order, SALTO Buddy follows the same path you would: EQP > I
 - FLIP serial numbers tab: one row per device with its serial number, and below it every FLIP part.
 - Check column: OK when exactly one part matched; otherwise it tells you what to look at.
 - The FLIP export (Excel) is saved in the order folder, Downloads\FLIP.
-- Ask Buddy can answer it too: 'serial numbers of the devices in creation'.
+- The Friendly SALTO Bot can answer it too: 'serial numbers of the devices in creation'.
 - Nothing is ever changed in FLIP: only 'Open Part Request' and 'Export' are used.
 
 ## HOTO preparation
@@ -94,28 +94,28 @@ SALTO Buddy reads the Orange Business Org Chart for you: a person's email, job t
 
 - People tab of an order: filled by itself once the order is read (a few seconds). Customer contacts are not in the Org Chart: their emails are in the Site and Commercial Content tabs.
 - Org Chart tab: type a last name, a first name or an email (partial names work) and press Enter. Select a person to see their management chain: manager, 2nd-level manager and so on, with emails.
-- Ask Buddy: 'What is the email of Ahmed Khairy's manager?' works too.
+- The Friendly SALTO Bot: 'What is the email of Ahmed Khairy's manager?' works too.
 - Results are kept for a week; 'Refresh' in the People tab reads them again.
 
-## Ask Buddy (chat)
+## The Friendly SALTO Bot (chat)
 
 Ask questions about an order in your own words, for example 'What is the site address?', 'Serial numbers of the devices in creation', 'Who is the local delivery manager?'.
 
 1. Open an order in Order explorer (or just name the order in your question).
-2. Go to the Ask Buddy tab and type your question, then Enter.
-3. Buddy reads the order and answers, saying which case and tab the answer comes from.
+2. Click SALTO Bot in the menu, type your question and press Enter.
+3. The bot reads the order and answers as it writes, saying which case and tab the answer comes from.
 
 Chats are saved on this PC and listed on the left, grouped by order number: click one to read it again or to continue it (Buddy remembers the conversation). '+ New chat' starts a fresh one; right-click a chat to delete it.
 
 Answers start with the short answer, then the details: bullets for a few facts, a table for lists (devices, serial numbers, sub-cases...). Click a table's column title to sort it. 'Copy answer' under each answer copies it as clean text: tables paste as columns in Excel and as text in Outlook.
 
-Buddy only uses what SALTO shows. If a field does not exist in SALTO (for example a serial number), it says so and offers the closest fields. Answers come from Claude (Anthropic): your question and the order data it needs are sent there.
+The bot only uses what SALTO shows. If a field does not exist in SALTO (for example a serial number), it says so and offers the closest fields. Answers come from Claude (Anthropic): your question and the order data it needs are sent there.
 
 ### The team key (nothing to do)
 
-Ask Buddy uses the team's shared Claude key. The first time you ask a question, SALTO Buddy gets it from the team SharePoint folder by itself (about 30 seconds) with your Orange Microsoft account, then keeps it encrypted on your PC. If Microsoft ever asks you to sign in, Firefox appears: sign in once and Buddy carries on.
+The bot uses the team's shared Claude key. The first time you ask a question, SALTO Buddy gets it from the team SharePoint folder by itself (about 30 seconds) with your Orange Microsoft account, then keeps it encrypted on your PC. If Microsoft ever asks you to sign in, Firefox appears: sign in once and Buddy carries on.
 
-Have your own key? Settings > Ask Buddy > paste it, Test, Done. Your own key is used first.
+Have your own key? Settings > SALTO Bot > paste it, Test, Done. Your own key is used first.
 
 ## Settings
 
@@ -124,7 +124,7 @@ Have your own key? Settings > Ask Buddy > paste it, Test, Done. Your own key is 
 - Open every sub-case / download all attachments automatically / screenshot every tab.
 - Read the full audit history (slower): by default only the latest audit page is read.
 - Check for updates at start.
-- Ask Buddy: your own Claude key (optional - the team key is used otherwise).
+- SALTO Bot: your own Claude key (optional - the team key is used otherwise).
 
 ## Updates
 
@@ -134,6 +134,6 @@ SALTO Buddy checks for a new version every time it starts. When there is one, th
 
 - Red pill 'Offline - waiting for network': connect the VPN; SALTO Buddy carries on by itself.
 - Sign-in does not finish: turn on 'Show the Firefox window' in Settings and complete it there.
-- Ask Buddy cannot get the team key: check you are on the Orange network and can open the team SharePoint folder; or add your own key in Settings.
+- The SALTO Bot cannot get the team key: check you are on the Orange network and can open the team SharePoint folder; or add your own key in Settings.
 - 'SALTO Buddy is already open': it is running - look in the taskbar.
 - Anything else: click 'Show activity' at the bottom and send a screenshot of it.

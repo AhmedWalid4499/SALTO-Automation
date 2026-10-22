@@ -20,7 +20,7 @@ GUIDE = [
     ("Getting started", [
         ("p", "SALTO Buddy reads a GOLD order in SALTO for you and shows everything in one place: stage, devices, "
               "people, every tab, every sub-case and every attachment. It can also answer questions about an order "
-              "in plain language (Ask Buddy)."),
+              "in plain language (The Friendly SALTO Bot)."),
         ("steps", ["Connect to the Orange network (VPN if you work remotely).",
                    "Open SALTO Buddy from the Start Menu or the desktop shortcut.",
                    "In Order explorer, type a GOLD order number (for example 10-1764901) and press Enter.",
@@ -40,7 +40,7 @@ GUIDE = [
                   "It fills in by itself every time an order has been read."]),
     ]),
     ("Notifications", [
-        ("p", "When a task is done - an order fully read (sub-cases and serial numbers included), an Ask Buddy "
+        ("p", "When a task is done - an order fully read (sub-cases and serial numbers included), a SALTO Bot "
               "answer, downloads - a SALTO Buddy card appears at the bottom right of the screen and the taskbar "
               "button flashes if you are in another window. Click Open to go straight to it."),
         ("list", ["Settings > General: 'Notify me when a task is done' turns them on or off.",
@@ -67,7 +67,7 @@ GUIDE = [
         ("list", ["FLIP serial numbers tab: one row per device with its serial number, and below it every FLIP part.",
                   "Check column: OK when exactly one part matched; otherwise it tells you what to look at.",
                   "The FLIP export (Excel) is saved in the order folder, Downloads\\FLIP.",
-                  "Ask Buddy can answer it too: 'serial numbers of the devices in creation'.",
+                  "The Friendly SALTO Bot can answer it too: 'serial numbers of the devices in creation'.",
                   "Nothing is ever changed in FLIP: only 'Open Part Request' and 'Export' are used."]),
     ]),
     ("HOTO preparation", [
@@ -117,30 +117,30 @@ GUIDE = [
                   "are not in the Org Chart: their emails are in the Site and Commercial Content tabs.",
                   "Org Chart tab: type a last name, a first name or an email (partial names work) and press Enter. "
                   "Select a person to see their management chain: manager, 2nd-level manager and so on, with emails.",
-                  "Ask Buddy: 'What is the email of Ahmed Khairy's manager?' works too.",
+                  "The Friendly SALTO Bot: 'What is the email of Ahmed Khairy's manager?' works too.",
                   "Results are kept for a week; 'Refresh' in the People tab reads them again."]),
     ]),
-    ("Ask Buddy (chat)", [
+    ("The Friendly SALTO Bot (chat)", [
         ("p", "Ask questions about an order in your own words, for example 'What is the site address?', "
               "'Serial numbers of the devices in creation', 'Who is the local delivery manager?'."),
         ("steps", ["Open an order in Order explorer (or just name the order in your question).",
-                   "Go to the Ask Buddy tab and type your question, then Enter.",
-                   "Buddy reads the order and answers, saying which case and tab the answer comes from."]),
+                   "Click SALTO Bot in the menu, type your question and press Enter.",
+                   "The bot reads the order and answers as it writes, saying which case and tab the answer comes from."]),
         ("p", "Chats are saved on this PC and listed on the left, grouped by order number: click one to read it "
               "again or to continue it (Buddy remembers the conversation). '+ New chat' starts a fresh one; "
               "right-click a chat to delete it."),
         ("p", "Answers start with the short answer, then the details: bullets for a few facts, a table for lists "
               "(devices, serial numbers, sub-cases...). Click a table's column title to sort it. 'Copy answer' under "
               "each answer copies it as clean text: tables paste as columns in Excel and as text in Outlook."),
-        ("p", "Buddy only uses what SALTO shows. If a field does not exist in SALTO (for example a serial number), "
+        ("p", "The bot only uses what SALTO shows. If a field does not exist in SALTO (for example a serial number), "
               "it says so and offers the closest fields. Answers come from Claude (Anthropic): your question and the "
               "order data it needs are sent there."),
         ("h", "The team key (nothing to do)"),
-        ("p", "Ask Buddy uses the team's shared Claude key. The first time you ask a question, SALTO Buddy gets it "
+        ("p", "The bot uses the team's shared Claude key. The first time you ask a question, SALTO Buddy gets it "
               "from the team SharePoint folder by itself (about 30 seconds) with your Orange Microsoft account, then "
               "keeps it encrypted on your PC. If Microsoft ever asks you to sign in, Firefox appears: sign in once "
               "and Buddy carries on."),
-        ("p", "Have your own key? Settings > Ask Buddy > paste it, Test, Done. Your own key is used first."),
+        ("p", "Have your own key? Settings > SALTO Bot > paste it, Test, Done. Your own key is used first."),
     ]),
     ("Settings", [
         ("list", ["Save folder for orders.",
@@ -148,7 +148,7 @@ GUIDE = [
                   "Open every sub-case / download all attachments automatically / screenshot every tab.",
                   "Read the full audit history (slower): by default only the latest audit page is read.",
                   "Check for updates at start.",
-                  "Ask Buddy: your own Claude key (optional - the team key is used otherwise)."]),
+                  "SALTO Bot: your own Claude key (optional - the team key is used otherwise)."]),
     ]),
     ("Updates", [
         ("p", "SALTO Buddy checks for a new version every time it starts. When there is one, the header button turns "
@@ -158,7 +158,7 @@ GUIDE = [
     ("Troubleshooting", [
         ("list", ["Red pill 'Offline - waiting for network': connect the VPN; SALTO Buddy carries on by itself.",
                   "Sign-in does not finish: turn on 'Show the Firefox window' in Settings and complete it there.",
-                  "Ask Buddy cannot get the team key: check you are on the Orange network and can open the team "
+                  "The SALTO Bot cannot get the team key: check you are on the Orange network and can open the team "
                   "SharePoint folder; or add your own key in Settings.",
                   "'SALTO Buddy is already open': it is running - look in the taskbar.",
                   "Anything else: click 'Show activity' at the bottom and send a screenshot of it."]),
@@ -219,8 +219,10 @@ def show_whats_new(app):
 
     def page_new(d):
         d.title("What's new")
-        for s in ["New Home dashboard: your orders at a glance - key figures, charts and recent orders.",
-                  "Ask Buddy keeps your chats, grouped by order number: reopen one for quick info or continue it.",
+        for s in ["Meet The Friendly SALTO Bot: a real chat with our robot - your messages and its answers in "
+                  "bubbles, and answers written live as it thinks, in a friendly tone.",
+                  "New Home dashboard: your orders at a glance - key figures, charts and recent orders.",
+                  "The Friendly SALTO Bot keeps your chats, grouped by order number: reopen one for quick info or continue it.",
                   "Notifications when a task is done (order read, answer ready, downloads), in SALTO Buddy style.",
                   "HOTO Excel in a template layout: order block, devices grouped by type, totals, fields to fill.",
                   "Rounder design, and every window and message now in SALTO Buddy style.",
@@ -230,7 +232,7 @@ def show_whats_new(app):
                   "messages and any information on a tab that is not a field or a table.",
                   "New: Org Chart - emails, job titles and managers (with their emails) of everyone on an order, and "
                   "an Org Chart tab to find anyone at Orange Business with their management chain.",
-                  "Ask Buddy answers are clearer: the answer first, then short sections, tables for devices and serial "
+                  "Chat answers are clearer: the answer first, then short sections, tables for devices and serial "
                   "numbers, and where it comes from. 'Copy answer' pastes cleanly into Outlook or Excel.",
                   "New: HOTO preparation - the HOTO sheet of a LAN order, filled for you (devices in creation), "
                   "ready to save as Excel or paste into your HOTO document.",
@@ -238,8 +240,8 @@ def show_whats_new(app):
                   "Much faster: the order appears in about 20 seconds; sub-cases and serial numbers fill in after.",
                   "Orders you read before open instantly, and SALTO is signed in as soon as the app starts.",
                   "FLIP serial numbers: for every EQP, SALTO Buddy goes to FLIP and gets each device's serial number.",
-                  "Ask Buddy: a chat that answers questions about an order in plain language (serial numbers too).",
-                  "No setup: Ask Buddy gets the team's key from SharePoint by itself.",
+                  "A chat that answers questions about an order in plain language (serial numbers too).",
+                  "No setup: the chat gets the team's key from SharePoint by itself.",
                   "A built-in guide: the Guide button in the header, at any time."]:
             d.bullet(s)
         d.note_body("The next steps take one minute and get you ready.")
@@ -250,10 +252,10 @@ def show_whats_new(app):
                          "Wait for the order to load (Firefox works hidden in the background)."])
 
     def page_key(d):
-        d.title("Step 2 - Ask Buddy is ready for you")
+        d.title("Step 2 - The Friendly SALTO Bot is ready for you")
         if key_ready():
             d.section("Ready")
-            d.note_body("Ask Buddy already has its key. Nothing to do here.")
+            d.note_body("The bot already has its key. Nothing to do here.")
             return
         d.section("Nothing to set up")
         d.note_body("The first time you ask Buddy a question, SALTO Buddy gets the team's key from SharePoint by "
@@ -261,11 +263,11 @@ def show_whats_new(app):
                     "in, Firefox appears: sign in once and Buddy carries on.")
 
     def page_ask(d):
-        d.title("Step 3 - Ask Buddy")
-        render_steps(d, ["With an order open, go to the Ask Buddy tab.",
+        d.title("Step 3 - The Friendly SALTO Bot")
+        render_steps(d, ["With an order open, click SALTO Bot in the menu.",
                          "Type a question, e.g. 'What is the site address?' or 'Devices in creation', then Enter.",
-                         "Buddy answers from SALTO and tells you which tab the answer comes from."])
-        d.note_body("Buddy never invents data: if SALTO does not have it, Buddy says so.")
+                         "The bot answers from SALTO, live as it writes, and tells you where the answer comes from."])
+        d.note_body("The bot never invents data: if SALTO does not have it, it says so.")
 
     def page_done(d):
         d.title("You're all set")
