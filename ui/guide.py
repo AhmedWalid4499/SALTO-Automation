@@ -12,6 +12,7 @@ from salto import config, keystore
 from salto.version import APP_NAME, __version__
 
 from . import theme as T
+from .dialogs import shell
 from .widgets import DetailView
 
 # (topic, [(kind, content)]) - kind: "p" paragraph, "h" sub-heading, "steps" numbered list, "list" bullets
@@ -29,6 +30,21 @@ GUIDE = [
               "appears at once (saved copy) and is refreshed behind it."),
         ("p", "Firefox works hidden in the background. The first time, the Orange sign-in is done for you; if Orange "
               "ever needs your password or MFA, Firefox appears so you can finish it."),
+    ]),
+    ("Home dashboard", [
+        ("p", "Home shows the orders read on this PC at a glance: how many, in progress or completed, new devices, "
+              "serial numbers found and open sub-cases, two charts (orders by stage, new devices by type) and the "
+              "recent orders."),
+        ("list", ["Type an order number at the top and press Enter to open it.",
+                  "Double-click a recent order to open it again (instantly, from the saved copy).",
+                  "It fills in by itself every time an order has been read."]),
+    ]),
+    ("Notifications", [
+        ("p", "When a task is done - an order fully read (sub-cases and serial numbers included), an Ask Buddy "
+              "answer, downloads - a SALTO Buddy card appears at the bottom right of the screen and the taskbar "
+              "button flashes if you are in another window. Click Open to go straight to it."),
+        ("list", ["Settings > General: 'Notify me when a task is done' turns them on or off.",
+                  "'Play a sound with notifications' adds a short sound."]),
     ]),
     ("Order explorer", [
         ("p", "The top of the page shows the order, its stage bar (green done, blue current, grey to come) and key "
@@ -62,6 +78,10 @@ GUIDE = [
                    "has been read.",
                    "Click 'Save HOTO Excel' (saved in the order folder by default), or 'Copy all rows' and paste them "
                    "into your HOTO document."]),
+        ("p", "The Excel has two sheets. 'HOTO': a ready-to-share template - title, an order block (GOLD ref, "
+              "customer, site, go-live, project manager, STC case, date), the devices grouped by type with counts, "
+              "yellow columns to fill in by hand (admin / customer IP), amber serial numbers to check, and a total. "
+              "'Plain list': the same rows without layout, to paste anywhere."),
         ("list", ["Go Live Date: the case's target delivery date. Change it in Excel if the go-live is planned "
                   "differently.",
                   "Project Manager: the case's Project Manager participant, empty when there is none.",
@@ -106,6 +126,9 @@ GUIDE = [
         ("steps", ["Open an order in Order explorer (or just name the order in your question).",
                    "Go to the Ask Buddy tab and type your question, then Enter.",
                    "Buddy reads the order and answers, saying which case and tab the answer comes from."]),
+        ("p", "Chats are saved on this PC and listed on the left, grouped by order number: click one to read it "
+              "again or to continue it (Buddy remembers the conversation). '+ New chat' starts a fresh one; "
+              "right-click a chat to delete it."),
         ("p", "Answers start with the short answer, then the details: bullets for a few facts, a table for lists "
               "(devices, serial numbers, sub-cases...). Click a table's column title to sort it. 'Copy answer' under "
               "each answer copies it as clean text: tables paste as columns in Excel and as text in Outlook."),
@@ -160,18 +183,15 @@ def render(d: DetailView, topic):
 
 
 def show_guide(root, start="Getting started"):
-    w = tk.Toplevel(root)
-    w.title(f"{APP_NAME} - Guide")
-    w.geometry("900x600")
-    w.configure(bg=T.CARD)
-    w.transient(root)
-    body = ttk.PanedWindow(w, orient="horizontal")
-    body.pack(fill="both", expand=True, padx=12, pady=12)
-    left = tk.Frame(body, bg=T.ZEBRA, highlightthickness=1, highlightbackground=T.LINE)
+    w, inner, _foot = shell(root, "Guide", "How to use SALTO Buddy", width=960, height=640, modal=False,
+                            resizable=True)
+    body = ttk.PanedWindow(inner, orient="horizontal")
+    body.pack(fill="both", expand=True)
+    left = tk.Frame(body, bg=T.ZEBRA)
     nav = ttk.Treeview(left, show="tree", style="Nav.Treeview", selectmode="browse")
     nav.column("#0", width=200)
     nav.pack(fill="both", expand=True, padx=4, pady=4)
-    right = tk.Frame(body, bg=T.CARD, highlightthickness=1, highlightbackground=T.LINE)
+    right = tk.Frame(body, bg=T.CARD)
     d = DetailView(right)
     d.pack(fill="both", expand=True)
     body.add(left, weight=1)
@@ -188,23 +208,10 @@ def show_guide(root, start="Getting started"):
 def show_whats_new(app):
     """Step-by-step window shown once after installing or updating to this version."""
     root = app.root
-    w = tk.Toplevel(root)
-    w.title(f"{APP_NAME} {__version__} - What's new")
-    w.geometry("760x520")
-    w.configure(bg=T.CARD)
-    w.transient(root)
-    w.grab_set()
-    top = tk.Frame(w, bg=T.HEADER, height=48)
-    top.pack(fill="x")
-    tk.Label(top, text=f"Welcome to {APP_NAME} {__version__}", bg=T.HEADER, fg="white", font=T.F_APP).pack(
-        side="left", padx=16, pady=10)
-    dots = tk.Label(top, text="", bg=T.HEADER, fg=T.SUBTLE, font=T.F_SMALL)
-    dots.pack(side="right", padx=16)
-    tk.Frame(w, bg=T.ORANGE, height=3).pack(fill="x")
-    foot = tk.Frame(w, bg=T.CARD)  # buttons pinned to the bottom, the page takes the rest
-    foot.pack(side="bottom", fill="x", padx=16, pady=12)
-    content = tk.Frame(w, bg=T.CARD)
-    content.pack(fill="both", expand=True)
+    w, content, foot = shell(root, f"Welcome to {APP_NAME} {__version__}", "What's new, and one minute to get "
+                             "you ready", width=780, height=560)
+    dots = tk.Label(foot, text="", bg=T.CANVAS, fg=T.MUTED, font=T.F_SMALL)
+    dots.pack(side="left")
 
     def key_ready():
         return bool(keystore.unprotect(app.cfg.get("claude_key", "")) or config.read_team_key(app.cfg)
@@ -212,7 +219,12 @@ def show_whats_new(app):
 
     def page_new(d):
         d.title("What's new")
-        for s in ["A new look: a new logo, a menu on the left, rounded cards and clearer key figures. Everything is "
+        for s in ["New Home dashboard: your orders at a glance - key figures, charts and recent orders.",
+                  "Ask Buddy keeps your chats, grouped by order number: reopen one for quick info or continue it.",
+                  "Notifications when a task is done (order read, answer ready, downloads), in SALTO Buddy style.",
+                  "HOTO Excel in a template layout: order block, devices grouped by type, totals, fields to fill.",
+                  "Rounder design, and every window and message now in SALTO Buddy style.",
+                  "A new look: a new logo, a menu on the left, rounded cards and clearer key figures. Everything is "
                   "where it was, just easier to read.",
                   "Nothing is left behind: every sub-case and every page of every table is read, plus the Pulse "
                   "messages and any information on a tab that is not a field or a table.",

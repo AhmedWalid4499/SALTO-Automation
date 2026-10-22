@@ -10,15 +10,16 @@ import threading
 import tkinter as tk
 import traceback
 from datetime import datetime
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, ttk
 
 from features import FEATURES
 from salto import config, errors, keystore, updater
 from salto.version import APP_NAME, __version__
 from salto.worker import BrowserWorker
-from ui import guide
+from ui import dialogs as messagebox  # SALTO Buddy-styled messages
+from ui import guide, notify
 from ui import theme as T
-from ui.widgets import NavItem, Pill, RoundCard
+from ui.widgets import NavItem, Pill, RoundButton, RoundCard
 
 PILL = {  # browser state -> (text, dot colour)
     "offline": ("Ready", T.GREEN),
@@ -67,7 +68,7 @@ class App:
         self.page_sub.pack(anchor="w")
         self._statusbar(main)
         for i, cls in enumerate(FEATURES):
-            card = RoundCard(main, radius=20, pad=18)
+            card = RoundCard(main, radius=28, pad=20)
             f = cls(self)
             if cls.__name__ == "OrderExplorer":
                 self.explorer = f
@@ -111,7 +112,7 @@ class App:
     # ------------------------------------------------------------ chrome
     def _sidebar(self):
         k = max(1.0, self.root.winfo_fpixels("1i") / 96)  # Windows display scaling
-        side = RoundCard(self.root, radius=22, pad=14, width=int(208 * k))
+        side = RoundCard(self.root, radius=28, pad=14, width=int(208 * k))
         side.pack(side="left", fill="y", padx=(18, 14), pady=18)
         side.pack_propagate(False)
         box = side.inner
@@ -188,6 +189,18 @@ class App:
         if not self._busy or s == "offline-network":
             self.pill.set(*PILL.get(s, PILL["offline"]))
 
+    def notify(self, title, message, page=None, kind="done", only_if_away=False):
+        """A 'task done' notification (Settings > Notify me...). page: feature to show when it is clicked.
+        only_if_away: only when the user is not already looking at that page in SALTO Buddy."""
+        if not self.cfg.get("notify", True):
+            return
+        on_page = page is not None and getattr(self, "current", None) is page
+        if only_if_away and notify.app_active(self.root) and (page is None or on_page):
+            return
+        open_page = (lambda: self.select(self.features.index(page))) if page in self.features else (lambda: None)
+        notify.show(self.root, title, message, on_open=open_page, kind=kind,
+                    sound=self.cfg.get("notify_sound", False))
+
     def busy(self, on, text=""):
         """Features call this around long work: orange pill, wait cursor."""
         self._busy = max(0, self._busy + (1 if on else -1))
@@ -236,9 +249,13 @@ class App:
 
     # ------------------------------------------------------------ settings
     def show_settings(self):
-        w = self._dialog("Settings", 560)
-        f = ttk.Frame(w, style="Card.TFrame", padding=(20, 16))
-        f.pack(fill="both", expand=True)
+        w, body = self._dialog("Settings", 640, "Folders, what SALTO Buddy reads, notifications and Ask Buddy")
+        tabs = ttk.Notebook(body, style="Inner.TNotebook")
+        tabs.pack(fill="both", expand=True)
+        f = ttk.Frame(tabs, style="Card.TFrame", padding=(4, 12, 4, 4))
+        tabs.add(f, text="General")
+        ask = ttk.Frame(tabs, style="Card.TFrame", padding=(4, 12, 4, 4))
+        tabs.add(ask, text="Ask Buddy")
         ttk.Label(f, text="Folders", style="Section.TLabel").grid(row=0, column=0, columnspan=3, sticky="w")
         ttk.Label(f, text="Save folder (each order gets '<order> - <STC>' with Downloads and Screenshots)",
                   style="Muted.TLabel").grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 2))
@@ -256,27 +273,31 @@ class App:
                                        ("tab_screenshots", "Screenshot every tab while reading"),
                                        ("flip", "Get serial numbers from FLIP for EQPs"),
                                        ("full_audit", "Read the full audit history (slower)"),
-                                       ("check_updates_on_start", "Check for updates when SALTO Buddy starts")]):
+                                       ("check_updates_on_start", "Check for updates when SALTO Buddy starts"),
+                                       ("notify", "Notify me when a task is done (order read, answer ready, downloads)"),
+                                       ("notify_sound", "Play a sound with notifications")]):
             opts[k] = tk.BooleanVar(value=self.cfg.get(k, config.DEFAULTS.get(k, True)))
             ttk.Checkbutton(f, text=text, variable=opts[k]).grid(row=4 + i, column=0, columnspan=3, sticky="w", pady=2)
         f.columnconfigure(0, weight=1)
 
-        # Ask Buddy: Claude API key, stored encrypted for this Windows user (DPAPI)
-        ttk.Label(f, text="Ask Buddy", style="Section.TLabel").grid(row=10, column=0, columnspan=3, sticky="w", pady=(16, 4))
+        # Ask Buddy: Claude API key, stored encrypted for this Windows user (DPAPI) - its own tab
+        f = ask
+        f.columnconfigure(0, weight=1)
+        ttk.Label(f, text="Ask Buddy", style="Section.TLabel").grid(row=13, column=0, columnspan=3, sticky="w", pady=(16, 4))
         ttk.Label(f, text="Claude API key (from console.anthropic.com). Questions and the order data they need are "
-                          "sent to Anthropic.", style="Muted.TLabel", wraplength=500).grid(row=11, column=0, columnspan=3,
+                          "sent to Anthropic.", style="Muted.TLabel", wraplength=500).grid(row=14, column=0, columnspan=3,
                                                                                            sticky="w")
         has_key = bool(keystore.unprotect(self.cfg.get("claude_key", "")))
         key = tk.StringVar()
         key_entry = ttk.Entry(f, textvariable=key, show="•", width=52)
-        key_entry.grid(row=12, column=0, sticky="ew", pady=(4, 0))
+        key_entry.grid(row=15, column=0, sticky="ew", pady=(4, 0))
         if has_key:
             key_entry.insert(0, "(saved - type a new key to replace it)")
             key_entry.configure(show="")
             key_entry.bind("<FocusIn>", lambda e: (key.set("") if key.get().startswith("(saved") else None,
                                                    key_entry.configure(show="•")))
         key_state = ttk.Label(f, text="Key saved" if has_key else "No key yet", style="Muted.TLabel")
-        key_state.grid(row=13, column=0, columnspan=3, sticky="w")
+        key_state.grid(row=16, column=0, columnspan=3, sticky="w")
 
         def test_key():
             k = key.get().strip()
@@ -297,22 +318,22 @@ class App:
                     msg = f"Key check failed: {str(exc).splitlines()[0][:90]}"
                 self.ui(lambda: key_state.configure(text=msg))
             threading.Thread(target=work, daemon=True).start()
-        ttk.Button(f, text="Test", command=test_key).grid(row=12, column=1, padx=6, pady=(4, 0))
+        ttk.Button(f, text="Test", command=test_key).grid(row=15, column=1, padx=6, pady=(4, 0))
         ttk.Button(f, text="Remove", command=lambda: (key.set(""), self.cfg.update(claude_key=""),
-                                                     key_state.configure(text="Key removed"))).grid(row=12, column=2,
+                                                     key_state.configure(text="Key removed"))).grid(row=15, column=2,
                                                                                                      pady=(4, 0))
 
         # team key: one file in a team-only folder, read by everyone's SALTO Buddy
         ttk.Label(f, text="Team key folder (only Orange staff can open it). Leave your own key empty to use the "
-                          "team key.", style="Muted.TLabel", wraplength=500).grid(row=14, column=0, columnspan=3,
+                          "team key.", style="Muted.TLabel", wraplength=500).grid(row=17, column=0, columnspan=3,
                                                                                   sticky="w", pady=(10, 0))
         team_dir = tk.StringVar(value=os.path.expandvars(self.cfg.get("team_key_dir") or config.TEAM_KEY_DIR))
-        ttk.Entry(f, textvariable=team_dir, width=52).grid(row=15, column=0, sticky="ew", pady=(4, 0))
+        ttk.Entry(f, textvariable=team_dir, width=52).grid(row=18, column=0, sticky="ew", pady=(4, 0))
         ttk.Button(f, text="Browse", command=lambda: team_dir.set(
             filedialog.askdirectory(initialdir=team_dir.get() or None, parent=w) or team_dir.get())).grid(
-            row=15, column=1, padx=6, pady=(4, 0))
+            row=18, column=1, padx=6, pady=(4, 0))
         team_state = ttk.Label(f, text="", style="Muted.TLabel")
-        team_state.grid(row=16, column=0, columnspan=3, sticky="w")
+        team_state.grid(row=19, column=0, columnspan=3, sticky="w")
 
         def team_status():
             p = config.team_key_path({"team_key_dir": team_dir.get().strip()})
@@ -342,10 +363,10 @@ class App:
                 messagebox.showerror(APP_NAME, f"Could not write {path}:\n{exc}", parent=w)
                 return
             team_status()
-        ttk.Button(f, text="Save as team key", command=save_team_key).grid(row=15, column=2, pady=(4, 0))
+        ttk.Button(f, text="Save as team key", command=save_team_key).grid(row=18, column=2, pady=(4, 0))
 
-        foot = ttk.Frame(f, style="Card.TFrame")
-        foot.grid(row=20, column=0, columnspan=3, sticky="ew", pady=(18, 0))
+        foot = ttk.Frame(body, style="Card.TFrame")
+        foot.pack(fill="x", pady=(14, 0))
         ttk.Label(foot, text=f"Version {__version__}  ·  © 2026 Ahmed Walid", style="Muted.TLabel").pack(side="left")
 
         def save():
@@ -363,21 +384,12 @@ class App:
             for feat in self.features:
                 getattr(feat, "settings_changed", lambda: None)()
             w.destroy()
-        ttk.Button(foot, text="Done", style="Accent.TButton", command=save).pack(side="right")
+        RoundButton(foot, "Done", save).pack(side="right")
 
-    def _dialog(self, title, width):
-        w = tk.Toplevel(self.root)
-        w.title(f"{APP_NAME} - {title}")
-        w.configure(bg=T.CARD)
-        w.transient(self.root)
-        w.resizable(False, False)
-        w.bind("<Escape>", lambda e: w.destroy())
-        w.update_idletasks()
-        x = self.root.winfo_rootx() + (self.root.winfo_width() - width) // 2
-        y = self.root.winfo_rooty() + 80
-        w.geometry(f"+{max(0, x)}+{max(0, y)}")
-        w.grab_set()
-        return w
+    def _dialog(self, title, width, subtitle=""):
+        """A SALTO Buddy window over the app: (window, body)."""
+        w, body, _foot = messagebox.shell(self.root, title, subtitle, width=width)
+        return w, body
 
     # ------------------------------------------------------------ updates (GitHub releases)
     def check_updates(self, silent):
@@ -407,13 +419,13 @@ class App:
         info = self._update
         if not info:
             return
-        w = self._dialog("Update available", 520)
-        f = ttk.Frame(w, style="Card.TFrame", padding=(20, 16))
+        w, body = self._dialog("Update available", 560, f"You have version {__version__}")
+        f = ttk.Frame(body, style="Card.TFrame")
         f.pack(fill="both", expand=True)
         ttk.Label(f, text=f"SALTO Buddy {info.version} is available", style="Title.TLabel").pack(anchor="w")
         ttk.Label(f, text=f"You have {__version__}. What's new:", style="Muted.TLabel").pack(anchor="w", pady=(2, 6))
-        notes = tk.Text(f, height=8, width=60, wrap="word", font=T.F_BODY, bg=T.ZEBRA, borderwidth=0,
-                        highlightthickness=1, highlightbackground=T.LINE, padx=8, pady=6)
+        notes = tk.Text(f, height=9, width=60, wrap="word", font=T.F_BODY, bg=T.FIELD, borderwidth=0,
+                        highlightthickness=0, padx=12, pady=10)
         notes.insert("end", info.notes or "No release notes.")
         notes.configure(state="disabled")
         notes.pack(fill="x")

@@ -6,14 +6,16 @@ import os
 import threading
 import tkinter as tk
 from datetime import datetime
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, ttk
 
 from salto import cache, capture, config, errors, files
 from salto.actions import order_lookup, read_stages
 from salto.case import Options, download_attachments, other_lines, read_subcases
 from salto.export import export_report
+from ui import dialogs as messagebox
 from ui import theme as T
-from ui.widgets import DetailView, IconButton, Segmented, StatusCard, Stepper, Table, ThinProgress
+from ui.widgets import (DetailView, IconButton, RoundButton, RoundEntry, Segmented, StatusCard, Stepper, Table,
+                        ThinProgress)
 
 from .base import Feature
 
@@ -34,11 +36,11 @@ class OrderExplorer(Feature):
         bar.pack(fill="x")
         ttk.Label(bar, text="Order #", font=T.F_BOLD).pack(side="left")
         self.order = tk.StringVar()
-        e = ttk.Entry(bar, textvariable=self.order, width=16, font=(T.FONT, 11))
+        e = RoundEntry(bar, textvariable=self.order, width=190)
         e.pack(side="left", padx=(8, 6))
         e.bind("<Return>", lambda _e: self.go())
         e.focus_set()
-        self.open_btn = ttk.Button(bar, text="Open order", style="Accent.TButton", command=self.go)
+        self.open_btn = RoundButton(bar, "Open order", self.go)
         self.open_btn.pack(side="left")
         # secondary actions: compact icon buttons (the tooltip says what each does)
         self.export_btn = IconButton(bar, "\uE9F9", "Export to Excel", self.export)
@@ -158,6 +160,7 @@ class OrderExplorer(Feature):
         if not pending:
             cache.save(rep)
             self._org_lookup(rep)
+            self._ready_notice(rep)
             return
         self.app.busy(True, "Reading sub-cases and FLIP...")
         self._progress(True)
@@ -189,9 +192,25 @@ class OrderExplorer(Feature):
         if self.rep is rep:
             self._refresh_live(note="")
         self._org_lookup(rep)
+        self._ready_notice(rep, exc)
         cb, self._callback = getattr(self, "_callback", None), None
         if cb:
             cb(rep, None)
+
+    def _ready_notice(self, rep, exc=None):
+        """Notification: the whole order (sub-cases, serial numbers) has been read."""
+        case = rep.case
+        if not case:
+            return
+        serials = sum(1 for c in case.walk() for x in (c.flip or {}).get("serials", []) if x.get("Serial number"))
+        parts = [rep.stc_id, rep.current_stage or rep.status, f"{len(case.subcases)} sub-case(s)"]
+        if serials:
+            parts.append(f"{serials} serial number(s)")
+        if exc:
+            self.app.notify(f"{rep.order_ref}: reading stopped", "Some sub-cases could not be read. "
+                            + " · ".join(p for p in parts if p), page=self, kind="error")
+        else:
+            self.app.notify(f"{rep.order_ref} is ready", " · ".join(p for p in parts if p), page=self)
 
     def _refresh_live(self, note):
         """Update the parts that sub-cases feed, keeping the tab the user is looking at."""
@@ -234,6 +253,8 @@ class OrderExplorer(Feature):
         if cb:  # opened from Ask Buddy: the chat reports the error
             cb(None, exc)
             return
+        self.app.notify(f"{self.order.get().strip() or 'The order'} could not be opened", errors.friendly(exc),
+                        page=self, kind="error", only_if_away=True)
         messagebox.showerror("SALTO Buddy", f"The order could not be opened.\n\n{errors.friendly(exc)}")
 
     def shot(self):
@@ -602,8 +623,8 @@ class OrderExplorer(Feature):
         ttk.Button(top, text="Open folder",
                    command=lambda: os.startfile(files.sub(self._folder(), "Downloads"))).pack(side="right")
         ttk.Button(top, text="Download all", command=lambda: self._download(atts)).pack(side="right", padx=6)
-        ttk.Button(top, text="Download selected", style="Accent.TButton",
-                   command=lambda: self._download([self._att_of[i] for i in tbl.tv.selection()])).pack(side="right")
+        RoundButton(top, "Download selected", lambda: self._download([self._att_of[i] for i in tbl.tv.selection()]),
+                    padx=14, height=32).pack(side="right")
         tk.Label(page, text="Select rows (Ctrl/Shift+click), then download. Double-click opens a downloaded file.",
                  bg=T.CARD, fg=T.MUTED, font=T.F_SMALL, anchor="w").pack(fill="x", pady=(0, 6))
 
@@ -651,6 +672,8 @@ class OrderExplorer(Feature):
             ok = sum(1 for r in rows if r.get("Saved as") and os.path.exists(r["Saved as"]))
             self.cards["Attachments"].set(str(len(self._attachments())))
             self.app.log(f"Downloaded {ok} of {len(rows)} file(s) to {os.path.join(rep.folder, 'Downloads')}")
+            self.app.notify("Downloads finished", f"{rep.order_ref}: {ok} of {len(rows)} file(s) downloaded",
+                            page=self, kind="done" if ok == len(rows) else "error", only_if_away=True)
             if ok and messagebox.askyesno("SALTO Buddy", f"Downloaded {ok} of {len(rows)} file(s).\n\nOpen the folder?"):
                 os.startfile(os.path.join(rep.folder, "Downloads"))
 

@@ -1,11 +1,12 @@
 """HOTO preparation: the LAN hand-over sheet filled from the order open in Order explorer."""
 import os
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, ttk
 
 from salto import files, hoto
+from ui import dialogs as messagebox
 from ui import theme as T
-from ui.widgets import Table
+from ui.widgets import RoundButton, Table
 
 from .base import Feature
 
@@ -19,10 +20,11 @@ class HotoPrep(Feature):
         self.rows = []
         bar = ttk.Frame(parent, style="Card.TFrame")
         bar.pack(fill="x")
-        self.save_btn = ttk.Button(bar, text="Save HOTO Excel", style="Accent.TButton", command=self.save,
-                                   state="disabled")
+        self.save_btn = RoundButton(bar, "Save HOTO Excel", self.save)
+        self.save_btn.configure(state="disabled")
         self.save_btn.pack(side="right")
-        self.copy_btn = ttk.Button(bar, text="Copy all rows", command=self.copy, state="disabled")
+        self.copy_btn = RoundButton(bar, "Copy all rows", self.copy, kind="soft")
+        self.copy_btn.configure(state="disabled")
         self.copy_btn.pack(side="right", padx=6)
         intro = tk.Label(bar, text="One row per device in creation, from the order open in Order explorer. Admin and "
                                    "customer IP addresses are not in SALTO: fill them in Excel.", bg=T.CARD,
@@ -88,7 +90,7 @@ class HotoPrep(Feature):
         if not path:
             return
         try:
-            hoto.save(self.rows, path)
+            hoto.save(self.rows, path, rep=self.app.explorer.rep)
         except OSError as exc:
             messagebox.showerror("SALTO Buddy", f"Could not save the HOTO sheet:\n{exc}\n\n"
                                                 "Is it open in Excel? Close it and try again.")

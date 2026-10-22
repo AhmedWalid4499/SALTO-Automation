@@ -18,6 +18,8 @@ DEFAULTS = {
     "flip": True,              # FLIP serial numbers for EQP sub-cases
     "full_audit": False,       # every audit page (slow) instead of the latest one
     "show_browser": False,     # Firefox runs hidden in the background
+    "notify": True,            # a notification when a task is done (order read, answer ready, downloads)
+    "notify_sound": False,
     # Ask Buddy team key: a folder only Orange staff can open (SharePoint/Teams sync or network share) holding
     # salto-buddy-team.key. Set TEAM_KEY_DIR below to make it the built-in default for everyone.
     "team_key_dir": "",

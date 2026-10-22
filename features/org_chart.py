@@ -4,7 +4,7 @@ from tkinter import ttk
 
 from salto import errors, orgchart
 from ui import theme as T
-from ui.widgets import Table
+from ui.widgets import RoundButton, RoundEntry, Table
 
 from .base import Feature
 
@@ -33,11 +33,11 @@ class OrgChartFinder(Feature):
         for label, width in (("Last name", 12), ("First name", 10), ("Email", 18)):
             ttk.Label(bar, text=label, font=T.F_BOLD).pack(side="left", padx=(0 if not self.vars else 12, 6))
             v = tk.StringVar()
-            e = ttk.Entry(bar, textvariable=v, width=width, font=(T.FONT, 11))
+            e = RoundEntry(bar, textvariable=v, width=width * 12)
             e.pack(side="left")
             e.bind("<Return>", lambda _e: self.search())
             self.vars[label] = v
-        self.btn = ttk.Button(bar, text="Search", style="Accent.TButton", command=self.search)
+        self.btn = RoundButton(bar, "Search", self.search)
         self.btn.pack(side="left", padx=12)
         self.info = tk.Label(parent, text="", bg=T.CARD, fg=T.MUTED, font=T.F_SMALL, anchor="w")
         self.info.pack(fill="x", pady=(10, 4))

@@ -1,4 +1,5 @@
 """Flat widgets: tables, a wrapping detail view, status cards, stage stepper, status pill."""
+import math
 import os
 import tkinter as tk
 from tkinter import font as tkfont
@@ -258,11 +259,15 @@ class ThinProgress(tk.Frame):
             self._job = None
 
 
-def _round_points(x1, y1, x2, y2, r):
-    """Polygon points of a rounded rectangle (draw with smooth=True)."""
+def _round_points(x1, y1, x2, y2, r, steps=8):
+    """Polygon points of a rounded rectangle with true quarter-circle corners (r = half the height: a pill)."""
     r = max(0, min(r, (x2 - x1) / 2, (y2 - y1) / 2))
-    return [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2, x2 - r, y2, x1 + r, y2,
-            x1, y2, x1, y2 - r, x1, y1 + r, x1, y1]
+    pts = []
+    for cx, cy, start in ((x2 - r, y1 + r, -90), (x2 - r, y2 - r, 0), (x1 + r, y2 - r, 90), (x1 + r, y1 + r, 180)):
+        for i in range(steps + 1):
+            a = math.radians(start + 90 * i / steps)
+            pts += [cx + r * math.cos(a), cy + r * math.sin(a)]
+    return pts
 
 
 def _scale(widget):
@@ -303,9 +308,9 @@ class RoundCard(tk.Canvas):
             return
         self.delete("shape")
         if self.shadow:  # a 1 px soft edge under the card
-            self.create_polygon(_round_points(0, 1, w - 1, h - 1, self.radius), smooth=True, fill=T.SHADOW,
+            self.create_polygon(_round_points(0, 1, w - 1, h - 1, self.radius), fill=T.SHADOW,
                                 outline="", tags="shape")
-        self.create_polygon(_round_points(0, 0, w - 1, h - 2 if self.shadow else h - 1, self.radius), smooth=True,
+        self.create_polygon(_round_points(0, 0, w - 1, h - 2 if self.shadow else h - 1, self.radius),
                             fill=self.fill, outline="", tags=("shape", "body"))
         self.tag_lower("shape")
         self.itemconfigure(self._win, width=max(1, w - 2 * self.pad))
@@ -364,7 +369,7 @@ class NavItem(tk.Canvas):
         if w < 4:
             return
         if self.selected or self.hover:
-            self.create_polygon(_round_points(0, 0, w - 1, h - 1, 12), smooth=True, outline="",
+            self.create_polygon(_round_points(0, 0, w - 1, h - 1, h // 2), outline="",
                                 fill=T.ORANGE_TINT if self.selected else T.NAV_HOVER)
         fg = T.ORANGE if self.selected else (T.INK if self.hover else "#4B5563")
         self.create_text(int(14 * self.k), h // 2, text=self.icon, font=T.F_ICON, fill=fg, anchor="w")
@@ -393,7 +398,7 @@ class Pill(tk.Canvas):
         w, h = self.winfo_width(), self.winfo_height()
         if w < 4:
             return
-        self.create_polygon(_round_points(0, 0, w - 1, h - 1, h // 2), smooth=True, fill=T.NAV_HOVER, outline="")
+        self.create_polygon(_round_points(0, 0, w - 1, h - 1, h // 2), fill=T.NAV_HOVER, outline="")
         self.create_oval(14, h // 2 - 4, 22, h // 2 + 4, fill=self.color, outline="")
         text = self.text
         f = tkfont.Font(font=T.F_SMALL)
@@ -414,7 +419,7 @@ class StatusCard(RoundCard):
 
     def __init__(self, parent, caption, value="—", variant="plain"):
         card, cap, val = _KPI[variant]
-        super().__init__(parent, fill=card, radius=16, pad=14, fit=True, shadow=variant == "plain")
+        super().__init__(parent, fill=card, radius=20, pad=14, fit=True, shadow=variant == "plain")
         self.variant = variant
         self.cap = tk.Label(self.inner, text=caption, bg=card, fg=cap, font=T.F_SMALL, anchor="w")
         self.cap.pack(fill="x")
@@ -500,3 +505,209 @@ class IconButton(tk.Label):
         return tk.Label.configure(self, cnf, **kw)
 
     config = configure
+
+
+def _mix(c1, c2, t):
+    a = [int(c1[i:i + 2], 16) for i in (1, 3, 5)]
+    b = [int(c2[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#%02x%02x%02x" % tuple(int(x + (y - x) * t) for x, y in zip(a, b))
+
+
+class GradientTile(tk.Canvas):
+    """A dashboard key figure on a rounded gradient tile: caption, big value, small note."""
+
+    def __init__(self, parent, caption, colors, value="—", note="", height=88):
+        k = _scale(parent)
+        super().__init__(parent, bg=_bg_of(parent), highlightthickness=0, bd=0, height=int(height * k))
+        self.k, self.caption, self.colors, self.value, self.note = k, caption, colors, value, note
+        self.bind("<Configure>", lambda e: self._draw())
+
+    def set(self, value, note=""):
+        self.value, self.note = value, note
+        self._draw()
+
+    def _draw(self):
+        self.delete("all")
+        w, h = self.winfo_width(), self.winfo_height()
+        if w < 10:
+            return
+        r = int(16 * self.k)
+        for x in range(w):  # one vertical line per pixel, clipped to the rounded rectangle
+            dx = r - x if x < r else (x - (w - 1 - r) if x > w - 1 - r else 0)
+            inset = r - (r * r - dx * dx) ** 0.5 if dx > 0 else 0
+            self.create_line(x, inset, x, h - inset, fill=_mix(self.colors[0], self.colors[1], x / max(1, w - 1)))
+        pad = int(16 * self.k)
+        self.create_text(pad, pad, text=self.caption, fill="white", font=T.F_SMALL, anchor="nw")
+        self.create_text(pad, h - pad - (int(16 * self.k) if self.note else 0), text=self.value, fill="white",
+                         font=(T.FONT, 20, "bold"), anchor="sw")
+        if self.note:
+            self.create_text(pad, h - pad + int(2 * self.k), text=self.note, fill="#F1F5FF", font=T.F_SMALL,
+                             anchor="sw")
+
+
+class BarChart(tk.Canvas):
+    """Vertical bars with rounded tops, value labels and soft grid lines. data: [(label, value, colour)]."""
+
+    def __init__(self, parent, height=220):
+        k = _scale(parent)
+        super().__init__(parent, bg=_bg_of(parent), highlightthickness=0, bd=0, height=int(height * k))
+        self.k, self.data = k, []
+        self.bind("<Configure>", lambda e: self._draw())
+
+    def set(self, data):
+        self.data = list(data)
+        self._draw()
+
+    def _draw(self):
+        self.delete("all")
+        w, h = self.winfo_width(), self.winfo_height()
+        if w < 20:
+            return
+        k = self.k
+        if not self.data:
+            self.create_text(w // 2, h // 2, text="No data yet: open an order", fill=T.SUBTLE, font=T.F_SMALL)
+            return
+        top, bottom, left = int(18 * k), int(34 * k), int(30 * k)
+        peak = max(v for _, v, _ in self.data) or 1
+        step = max(1, -(-peak // 4))
+        scale = max(peak, step * 4)
+        for i in range(5):  # grid lines with their value
+            y = h - bottom - (h - bottom - top) * (i * step) / scale
+            self.create_line(left, y, w, y, fill=T.LINE)
+            self.create_text(left - 6, y, text=str(i * step), fill=T.SUBTLE, font=(T.FONT, 8), anchor="e")
+        slot = (w - left) / len(self.data)
+        bar = min(slot * 0.55, 56 * k)
+        f = tkfont.Font(font=(T.FONT, 8))
+        base = h - bottom
+        for i, (label, value, color) in enumerate(self.data):
+            x = left + slot * i + (slot - bar) / 2
+            y = base - (base - top) * value / scale
+            if value:
+                rr = min(bar / 2, 8 * k, (base - y))
+                self.create_polygon(_round_points(x, y, x + bar, base + rr, rr), fill=color, outline="")
+                self.create_rectangle(x - 1, base, x + bar + 1, base + rr + 2, fill=_bg_of(self), outline="")
+            self.create_text(x + bar / 2, y - 4, text=str(value), fill=T.INK, font=T.F_SMALL_BOLD, anchor="s")
+            text = label
+            while text and f.measure(text) > slot - 6:
+                text = text[:-2]
+            if text != label:
+                text = text.rstrip() + "…"
+            self.create_text(x + bar / 2, base + 8, text=text, fill=T.MUTED, font=(T.FONT, 8), anchor="n")
+
+
+class RoundButton(tk.Canvas):
+    """A pill-shaped button. kind: accent (orange), dark, soft. configure(state=..., text=...) like a ttk button."""
+
+    _COLORS = {"accent": (T.ORANGE, T.ORANGE_DARK, "white"), "dark": (T.DARK, T.DARK_SOFT, "white"),
+               "soft": (T.FIELD, T.BUTTON_HOVER, T.INK)}
+
+    def __init__(self, parent, text, command, kind="accent", padx=20, height=36, font=None):
+        self.k = _scale(parent)
+        self.text, self.command, self.kind, self.padx = text, command, kind, padx
+        self.font = font or T.F_BOLD
+        self.state, self.hover = "normal", False
+        super().__init__(parent, bg=_bg_of(parent), highlightthickness=0, bd=0, height=int(height * self.k),
+                         width=self._width(), cursor="hand2")
+        self.bind("<Configure>", lambda e: self._draw())
+        self.bind("<Enter>", lambda e: self._hover(True))
+        self.bind("<Leave>", lambda e: self._hover(False))
+        self.bind("<Button-1>", lambda e: self.state == "normal" and self.command())
+
+    def _width(self):
+        return int(tkfont.Font(font=self.font).measure(self.text) + 2 * self.padx * self.k)
+
+    def _hover(self, on):
+        self.hover = on
+        self._draw()
+
+    def configure(self, cnf=None, **kw):
+        changed = False
+        if "state" in kw:
+            self.state = kw.pop("state")
+            changed = True
+        if "text" in kw:
+            self.text = kw.pop("text")
+            kw["width"] = self._width()
+            changed = True
+        kw.pop("style", None)
+        result = tk.Canvas.configure(self, cnf, **kw) if (cnf or kw) else None
+        if changed:
+            self._draw()
+        return result
+
+    config = configure
+
+    def cget(self, key):
+        if key == "state":
+            return self.state
+        if key == "text":
+            return self.text
+        return tk.Canvas.cget(self, key)
+
+    def _draw(self):
+        self.delete("all")
+        w, h = self.winfo_width(), self.winfo_height()
+        if w < 4:
+            return
+        base, hover, fg = self._COLORS[self.kind]
+        fill = hover if self.hover and self.state == "normal" else base
+        if self.state != "normal":
+            fill, fg = ("#F7C49A", "white") if self.kind == "accent" else (T.FIELD, "#A0A4AB")
+        self.create_polygon(_round_points(0, 0, w - 1, h - 1, h // 2), fill=fill, outline="")
+        self.create_text(w // 2, h // 2, text=self.text, fill=fg, font=self.font)
+        tk.Canvas.configure(self, cursor="hand2" if self.state == "normal" else "")
+
+
+class RoundEntry(tk.Canvas):
+    """A text field with rounded ends (grey; orange outline when focused). .entry is the tk.Entry inside;
+    get / insert / delete / bind / focus_set go to it, so it replaces a ttk.Entry."""
+
+    def __init__(self, parent, textvariable=None, width=200, height=38, font=None, show=""):
+        k = _scale(parent)
+        super().__init__(parent, bg=_bg_of(parent), highlightthickness=0, bd=0, width=int(width * k),
+                         height=int(height * k))
+        self.focused = False
+        self.entry = tk.Entry(self, textvariable=textvariable, bd=0, relief="flat", bg=T.FIELD, fg=T.INK,
+                              font=font or (T.FONT, 11), insertbackground=T.INK, highlightthickness=0, show=show)
+        self._win = self.create_window(0, 0, window=self.entry, anchor="w")
+        self.entry.bind("<FocusIn>", lambda e: self._focus(True), add="+")
+        self.entry.bind("<FocusOut>", lambda e: self._focus(False), add="+")
+        tk.Canvas.bind(self, "<Configure>", lambda e: self._draw())
+        tk.Canvas.bind(self, "<Button-1>", lambda e: self.entry.focus_set())
+
+    def _focus(self, on):
+        self.focused = on
+        self._draw()
+
+    def _draw(self):
+        tk.Canvas.delete(self, "shape")
+        w, h = self.winfo_width(), self.winfo_height()
+        if w < 4:
+            return
+        r = h // 2
+        if self.focused:
+            self.create_polygon(_round_points(0, 0, w - 1, h - 1, r), fill=T.ORANGE, outline="",
+                                tags="shape")
+            self.create_polygon(_round_points(2, 2, w - 3, h - 3, r - 2), fill=T.FIELD, outline="",
+                                tags="shape")
+        else:
+            self.create_polygon(_round_points(0, 0, w - 1, h - 1, r), fill=T.FIELD, outline="",
+                                tags="shape")
+        self.tag_lower("shape")
+        self.coords(self._win, max(12, r * 0.7), h // 2)
+        self.itemconfigure(self._win, width=max(10, w - 2 * max(12, r * 0.7)))
+
+    def get(self):
+        return self.entry.get()
+
+    def delete(self, *args):
+        return self.entry.delete(*args)
+
+    def insert(self, *args):
+        return self.entry.insert(*args)
+
+    def bind(self, seq=None, func=None, add=None):
+        return self.entry.bind(seq, func, add)
+
+    def focus_set(self):
+        self.entry.focus_set()

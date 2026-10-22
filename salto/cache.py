@@ -26,6 +26,11 @@ def save(rep):
     with open(tmp, "wb") as f:
         pickle.dump({"version": __version__, "saved": time.time(), "rep": rep}, f)
     os.replace(tmp, _path(rep.order_ref))
+    from . import history
+    try:
+        history.record(rep)  # the Home dashboard's list of orders
+    except Exception:
+        pass
 
 
 def load(order_ref):

@@ -13,6 +13,21 @@ SALTO Buddy signs in to SALTO in the background as soon as it opens. An order yo
 
 Firefox works hidden in the background. The first time, the Orange sign-in is done for you; if Orange ever needs your password or MFA, Firefox appears so you can finish it.
 
+## Home dashboard
+
+Home shows the orders read on this PC at a glance: how many, in progress or completed, new devices, serial numbers found and open sub-cases, two charts (orders by stage, new devices by type) and the recent orders.
+
+- Type an order number at the top and press Enter to open it.
+- Double-click a recent order to open it again (instantly, from the saved copy).
+- It fills in by itself every time an order has been read.
+
+## Notifications
+
+When a task is done - an order fully read (sub-cases and serial numbers included), an Ask Buddy answer, downloads - a SALTO Buddy card appears at the bottom right of the screen and the taskbar button flashes if you are in another window. Click Open to go straight to it.
+
+- Settings > General: 'Notify me when a task is done' turns them on or off.
+- 'Play a sound with notifications' adds a short sound.
+
 ## Order explorer
 
 The top of the page shows the order, its stage bar (green done, blue current, grey to come) and key numbers. Below, one tab per job:
@@ -44,6 +59,8 @@ The HOTO sheet of a LAN project, filled from the order open in Order explorer: o
 1. Open the order in Order explorer.
 2. Go to the HOTO preparation tab: the rows are already filled. Serial numbers fill in as soon as FLIP has been read.
 3. Click 'Save HOTO Excel' (saved in the order folder by default), or 'Copy all rows' and paste them into your HOTO document.
+
+The Excel has two sheets. 'HOTO': a ready-to-share template - title, an order block (GOLD ref, customer, site, go-live, project manager, STC case, date), the devices grouped by type with counts, yellow columns to fill in by hand (admin / customer IP), amber serial numbers to check, and a total. 'Plain list': the same rows without layout, to paste anywhere.
 
 - Go Live Date: the case's target delivery date. Change it in Excel if the go-live is planned differently.
 - Project Manager: the case's Project Manager participant, empty when there is none.
@@ -87,6 +104,8 @@ Ask questions about an order in your own words, for example 'What is the site ad
 1. Open an order in Order explorer (or just name the order in your question).
 2. Go to the Ask Buddy tab and type your question, then Enter.
 3. Buddy reads the order and answers, saying which case and tab the answer comes from.
+
+Chats are saved on this PC and listed on the left, grouped by order number: click one to read it again or to continue it (Buddy remembers the conversation). '+ New chat' starts a fresh one; right-click a chat to delete it.
 
 Answers start with the short answer, then the details: bullets for a few facts, a table for lists (devices, serial numbers, sub-cases...). Click a table's column title to sort it. 'Copy answer' under each answer copies it as clean text: tables paste as columns in Excel and as text in Outlook.
 
