@@ -18,6 +18,7 @@ from salto.version import APP_NAME, __version__
 from salto.worker import BrowserWorker
 from ui import dialogs as messagebox  # SALTO Buddy-styled messages
 from ui import guide, notify
+from ui.signin import SignInPrompter
 from ui import theme as T
 from ui.widgets import NavItem, Pill, RoundButton, RoundCard
 
@@ -53,6 +54,10 @@ class App:
 
         self.worker = BrowserWorker(log=self.log, on_state=lambda s: self.ui(lambda: self._set_state(s)),
                                     visible=self.cfg.get("show_browser", False))
+        # Orange sign-in in SALTO Buddy's own windows instead of showing Firefox
+        self.worker.browser.prompt = SignInPrompter(self)
+        self.worker.browser.cfg = self.cfg
+        self.worker.browser.save_cfg = lambda: self.ui(lambda: config.save(self.cfg))
         self.reports = {}      # order_ref -> OrderReport read this session (shared by the features)
         self.explorer = None   # the Order explorer feature (Ask Buddy opens orders through it)
         self.features, self.pages, self.nav = [], [], []
@@ -279,6 +284,15 @@ class App:
                                        ("notify_sound", "Play a sound with notifications")]):
             opts[k] = tk.BooleanVar(value=self.cfg.get(k, config.DEFAULTS.get(k, True)))
             ttk.Checkbutton(f, text=text, variable=opts[k]).grid(row=4 + i, column=0, columnspan=3, sticky="w", pady=2)
+        ttk.Label(f, text="Sign in to SALTO with", style="Section.TLabel").grid(row=14, column=0, columnspan=3,
+                                                                              sticky="w", pady=(16, 4))
+        from salto.signin import METHODS
+        choices = [("", "Ask me when Orange needs it")] + [(m[0], m[1]) for m in METHODS]
+        signin = tk.StringVar(value=dict(choices).get(self.cfg.get("signin_method", ""), choices[0][1]))
+        ttk.Combobox(f, textvariable=signin, values=[c[1] for c in choices], state="readonly", width=40).grid(
+            row=15, column=0, sticky="w")
+        ttk.Label(f, text="SALTO Buddy asks in its own window and signs you in; Firefox stays hidden.",
+                  style="Muted.TLabel").grid(row=16, column=0, columnspan=3, sticky="w", pady=(2, 0))
         f.columnconfigure(0, weight=1)
 
         # Ask Buddy: Claude API key, stored encrypted for this Windows user (DPAPI) - its own tab
@@ -372,6 +386,7 @@ class App:
 
         def save():
             self.cfg["export_dir"] = folder.get().strip() or config.DEFAULTS["export_dir"]
+            self.cfg["signin_method"] = {label: key for key, label in choices}.get(signin.get(), "")
             for k, v in opts.items():
                 self.cfg[k] = bool(v.get())
             new_key = key.get().strip()

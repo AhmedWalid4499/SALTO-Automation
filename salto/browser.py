@@ -56,6 +56,9 @@ class SaltoBrowser:
         self.on_state = on_state or (lambda _s: None)
         self.visible = visible       # user setting: show the Firefox window
         self.headless = False        # how the running Firefox was started
+        # sign-in in SALTO Buddy's own windows (ui.signin): prompt(kind, **data); None: show Firefox instead
+        self.prompt = None
+        self.cfg = None              # app settings (remembered sign-in method)
 
     def set_visible(self, visible):
         """Takes effect the next time Firefox starts (a running Firefox cannot be hidden/shown)."""
@@ -85,7 +88,11 @@ class SaltoBrowser:
                      # intranet names only resolve through the corporate DNS: never use DNS-over-HTTPS
                      "network.trr.mode": 5,
                      # sign in to Microsoft 365 (team key on SharePoint) with the Windows Orange account
-                     "network.http.windows-sso.enabled": True}.items():
+                     "network.http.windows-sso.enabled": True,
+                     # Orange PKI: use the Windows certificate store (PKI card) and pick the certificate without
+                     # a Firefox dialog; Windows itself asks for the PIN
+                     "security.osclientcerts.autoload": True,
+                     "security.default_personal_cert": "Select Automatically"}.items():
             opts.set_preference(k, v)
         self.log("Starting Firefox...")
         self.on_state("starting")
@@ -136,10 +143,14 @@ class SaltoBrowser:
         deadline = time.time() + timeout
         asked = False
         stuck_since = None
+        signin = None
+        use_app = self.prompt is not None and self.headless  # sign in through SALTO Buddy's windows
         while time.time() < deadline:
             d = self.driver
             d.switch_to.default_content()
             if self._portal_ready():
+                if signin:
+                    signin.done()
                 self.log("Logged in to SALTO.")
                 self.on_state("connected")
                 return
@@ -148,6 +159,25 @@ class SaltoBrowser:
                 self.log("Clicking 'Login with OpenID'...")
                 link.click()
                 time.sleep(3)
+                continue
+            if use_app and not self._on_salto():
+                from .signin import SignIn
+                signin = signin or SignIn(self, self.prompt, self.cfg, self.log)
+                try:
+                    keep = signin.step()
+                except WebDriverException:
+                    keep = True  # the page changed under us: look again
+                if keep:
+                    time.sleep(1.5)
+                    continue
+                # the user wants to finish in Firefox
+                signin.done()
+                use_app, signin = False, None
+                self.log("Opening the Firefox window for the sign-in...")
+                self.quit()
+                self.start(force_visible=True)
+                self.on_state("signing-in")
+                self._open_salto(timeout)
                 continue
             if not self._on_salto() and self._choose_professional_account():
                 time.sleep(3)

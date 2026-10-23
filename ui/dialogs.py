@@ -72,6 +72,7 @@ def shell(parent, title, subtitle="", width=560, height=None, modal=True, resiza
     else:
         x, y = (w.winfo_screenwidth() - ww) // 2, w.winfo_screenheight() // 4
     w.geometry(f"{ww}x{hh}+{max(0, x)}+{max(0, y)}" if hh else f"{ww}x1+{max(0, x)}+{max(0, y)}")
+    w.minsize(ww, 1)  # never narrower than asked: wrapped text is sized for this width
     if not hh:  # height from the content, once it is there
         w.after_idle(lambda: (w.geometry(""), w.after(30, lambda: _keep_on_screen(w))))
     if modal:
