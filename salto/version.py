@@ -1,3 +1,3 @@
-﻿APP_NAME = "SALTO Buddy"
-__version__ = "1.14.0"
+APP_NAME = "SALTO Buddy"
+__version__ = "1.15.0"
 GITHUB_REPO = "AhmedWalid4499/SALTO-Automation"

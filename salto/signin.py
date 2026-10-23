@@ -8,7 +8,8 @@ prompt(kind, **data) is supplied by the app (ui.signin). It is called from the b
 Returning None means "show me the Firefox window instead".
 
 What the user types is typed into the sign-in page and then forgotten: never logged, never saved.
-A PKI PIN is never asked here: Windows (or the card software) asks for it in its own secure window.
+A PKI PIN is never asked here: Firefox asks for it in its own password window, which SALTO Buddy brings up
+just for that moment (a hidden Firefox cannot show it).
 """
 import re
 import time
@@ -19,8 +20,8 @@ from selenium.common.exceptions import StaleElementReferenceException, WebDriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 
-METHODS = [("pki", "Orange PKI", "Your Orange PKI card or certificate. Windows asks for your PIN in its own "
-                                 "window (preferred by Orange)."),
+METHODS = [("pki", "Orange PKI", "Your Orange PKI card or certificate. Firefox shows its password window for "
+                                 "your PIN, then hides again (preferred by Orange)."),
            ("group", "Orange GroupIdentity", "Your Domain\\Orange ID, password and a second factor (code)."),
            ("microsoft", "Microsoft Professional Account", "Your Microsoft account (often automatic on an Orange "
                                                            "PC; otherwise password and phone approval).")]
@@ -53,6 +54,7 @@ class SignIn:
     def __init__(self, browser, prompt, cfg=None, log=print):
         self.b, self.prompt, self.cfg, self.log = browser, prompt, cfg if cfg is not None else {}, log
         self.method = None
+        self.need_visible = False  # PKI: Firefox must be shown for its PIN window
         self.waiting = None   # message shown in a "wait" window
         self.last_form = None
         self.idle_since = None
@@ -76,7 +78,7 @@ class SignIn:
 
     # ------------------------------------------------------------ Orange Connect: choose the method
     def _chooser(self):
-        with suppress(WebDriverException):
+        with suppress(Exception):
             return bool(self.d.find_elements(By.ID, BUTTONS["pki"])) or bool(
                 self.d.find_elements(By.XPATH, "//*[contains(normalize-space(.), 'Select an authentication mode')]"))
         return False
@@ -98,21 +100,48 @@ class SignIn:
         if btn is None:
             self.log("The sign-in page has changed: opening the Firefox window...")
             return False
+        if method == "pki" and self.b.headless:
+            # the PIN is asked in Firefox's own password window: Firefox must be on screen for that moment
+            self.need_visible = True
+            return False
         self.log(f"Signing in with {dict((m[0], m[1]) for m in METHODS)[method]}...")
         with suppress(WebDriverException):
             self.d.execute_script("arguments[0].scrollIntoView({block: 'center'})", btn)
+        # click without waiting for the next page: with PKI it only loads once the PIN has been typed
+        with suppress(Exception):
+            self.d.set_page_load_timeout(3)
+        try:
             btn.click()
+        except Exception:  # page-load timeout while the PIN window is open: expected
+            pass
         if method == "pki":
-            self._wait("Type your PIN in the Windows security window (it may be behind other windows). "
-                       "SALTO Buddy continues by itself as soon as you are signed in.", title="Orange PKI")
-        time.sleep(2)
+            self._wait("Firefox is asking for your PKI PIN in its password window: type it there. Firefox goes "
+                       "back out of sight as soon as you are signed in.", title="Orange PKI")
+        # wait for the page to move on (PKI: while the user types the PIN in Firefox's password window)
+        deadline = time.time() + (90 if method == "pki" else 20)
+        while time.time() < deadline:
+            time.sleep(1)
+            try:
+                moved = not self._chooser()
+            except Exception:  # Firefox busy with its PIN window: keep waiting
+                moved = False
+            if moved:
+                self.clicks = 0
+                with suppress(Exception):
+                    self.d.set_page_load_timeout(60)
+                return True
+        self.clicks = getattr(self, "clicks", 0) + 1
+        if self.clicks >= 2:  # the page does not react: let the user finish in Firefox
+            self.log("The Orange sign-in page did not react: opening the Firefox window...")
+            return False
         return True
 
     def _button(self, method):
         with suppress(WebDriverException):
-            found = self.d.find_elements(By.ID, BUTTONS[method])
-            if found and found[0].is_displayed():
-                return found[0]
+            # the page gives the same id to each method's icon and to its Connect button: take the button
+            for el in self.d.find_elements(By.XPATH, f"//button[@id='{BUTTONS[method]}']"):
+                if el.is_displayed():
+                    return el
             for el in self.d.find_elements(By.XPATH, "//button|//a|//input[@type='submit']"):
                 text = (el.text + " " + (el.get_attribute("id") or "")).lower()
                 if el.is_displayed() and TEXTS[method] in text.replace(" ", ""):

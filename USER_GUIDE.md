@@ -11,7 +11,13 @@ SALTO Buddy reads a GOLD order in SALTO for you and shows everything in one plac
 
 SALTO Buddy signs in to SALTO in the background as soon as it opens. An order you have read before appears at once (saved copy) and is refreshed behind it.
 
-Firefox works hidden in the background. The first time, the Orange sign-in is done for you; if Orange ever needs your password or MFA, Firefox appears so you can finish it.
+Firefox works hidden in the background. When Orange asks you to sign in, SALTO Buddy asks you in its own window how to sign in (Orange PKI, Orange GroupIdentity or Microsoft Professional Account) and does the rest:
+
+- Orange PKI: Firefox's own password window appears for a moment - type your PKI PIN there, as usual. Firefox then goes back out of sight.
+- Orange GroupIdentity: type your account and password in the SALTO Buddy window.
+- Microsoft Professional Account: type what Microsoft asks in the SALTO Buddy window; if it asks for a phone approval, SALTO Buddy shows the number to tap in Authenticator.
+
+Tick 'Remember my choice' to skip the question next time (change it in Settings > General). Your password and PIN are never saved by SALTO Buddy.
 
 ## Home dashboard
 
@@ -130,6 +136,7 @@ Have your own key? Settings > SALTO Bot > paste it, Test, Done. Your own key is 
 
 - Save folder for orders.
 - Show the Firefox window (normally hidden).
+- Sign in to SALTO with: Ask me, or always the same way (Orange PKI, GroupIdentity, Microsoft).
 - Open every sub-case / download all attachments automatically / screenshot every tab.
 - Read the full audit history (slower): by default only the latest audit page is read.
 - Check for updates at start.
@@ -142,7 +149,8 @@ SALTO Buddy checks for a new version every time it starts. When there is one, th
 ## Troubleshooting
 
 - Red pill 'Offline - waiting for network': connect the VPN; SALTO Buddy carries on by itself.
-- Sign-in does not finish: turn on 'Show the Firefox window' in Settings and complete it there.
+- Sign-in does not finish: click 'Show Firefox instead' in the sign-in window (or turn on 'Show the Firefox window' in Settings) and complete it there.
+- No PKI password window: make sure your Orange smart card or PKI certificate is ready, then open the order again.
 - The SALTO Bot cannot get the team key: check you are on the Orange network and can open the team SharePoint folder; or add your own key in Settings.
 - 'SALTO Buddy is already open': it is running - look in the taskbar.
 - Anything else: click 'Show activity' at the bottom and send a screenshot of it.

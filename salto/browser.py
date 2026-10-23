@@ -147,10 +147,16 @@ class SaltoBrowser:
         use_app = self.prompt is not None and self.headless  # sign in through SALTO Buddy's windows
         while time.time() < deadline:
             d = self.driver
-            d.switch_to.default_content()
+            with suppress(Exception):
+                d.switch_to.default_content()
             if self._portal_ready():
                 if signin:
                     signin.done()
+                    with suppress(WebDriverException):
+                        self.driver.set_page_load_timeout(300)  # back to normal after the sign-in
+                if getattr(self, "shown_for_signin", False) and not self.visible:
+                    self.shown_for_signin = False
+                    self._out_of_sight()
                 self.log("Logged in to SALTO.")
                 self.on_state("connected")
                 return
@@ -165,10 +171,21 @@ class SaltoBrowser:
                 signin = signin or SignIn(self, self.prompt, self.cfg, self.log)
                 try:
                     keep = signin.step()
-                except WebDriverException:
-                    keep = True  # the page changed under us: look again
+                except Exception:  # the page changed under us, or Firefox is busy (PIN window): look again
+                    keep = True
                 if keep:
                     time.sleep(1.5)
+                    continue
+                if signin.need_visible:
+                    # PKI: Firefox asks for the PIN in its own window, which only a visible Firefox can show.
+                    # Show it for the sign-in only; it goes out of sight again once signed in.
+                    signin.need_visible = False
+                    self.log("Showing Firefox for your PKI PIN...")
+                    self.quit()
+                    self.start(force_visible=True)
+                    self.shown_for_signin = True
+                    self.on_state("signing-in")
+                    self._open_salto(timeout)
                     continue
                 # the user wants to finish in Firefox
                 signin.done()
@@ -204,6 +221,13 @@ class SaltoBrowser:
                     asked = True
             time.sleep(1.5)
         raise LoginTimeout("Login was not completed in time.")
+
+    def _out_of_sight(self):
+        """Firefox was shown only for the sign-in (PKI PIN): move it off the screen; it keeps working there
+        (a minimised window may stop drawing pages, which screenshots need)."""
+        with suppress(WebDriverException):
+            self.driver.set_window_rect(x=-4000, y=0, width=1920, height=1080)
+            self.log("Firefox is back out of sight.")
 
     def _open_salto(self, timeout):
         """Load SALTO, waiting out network/VPN drops instead of failing."""
@@ -246,13 +270,16 @@ class SaltoBrowser:
 
     def _on_salto(self):
         # compare the host only: the Orange login URL embeds SALTO's address in redirect_uri
-        return urlparse(self.driver.current_url).hostname == "web-salto-intl.com.intraorange"
+        try:
+            return urlparse(self.driver.current_url).hostname == "web-salto-intl.com.intraorange"
+        except Exception:  # Firefox busy (e.g. its PKI PIN window is open)
+            return False
 
     def _portal_ready(self):
         try:
             return self._on_salto() and bool(
                 self.driver.find_elements(By.XPATH, "//*[@title='Toggle Left Navigation' or @aria-label='Toggle Left Navigation']"))
-        except WebDriverException:
+        except Exception:
             return False
 
     # ------------------------------------------------------------------ frames
