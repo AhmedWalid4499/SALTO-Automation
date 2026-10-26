@@ -746,6 +746,8 @@ def read_case(b: SaltoBrowser, case_id: str, opts: Options = None, log=print, re
                 data.screenshots.append(shot)
                 enter_case(b, case_id)
         except (WebDriverException, IndexError) as exc:
+            if errors.browser_gone(exc):
+                raise  # every other tab would fail the same way
             msg = f"{case_id} / {name}: {errors.note(exc)}"
             log("  could not read " + msg)
             data.errors.append(msg)
@@ -790,6 +792,10 @@ def read_subcases(b, data, opts, log=print, read_stages=None, on_each=None):
             sub = read_case(b, sid, opts, log, read_stages, depth=1)
             data.subcases.append(sub)
         except Exception as exc:  # one bad sub-case never stops the others
+            if errors.browser_gone(exc):  # ...but without Firefox none of them can be read
+                data.errors.append(f"{sid}: {errors.note(exc)}")
+                log("Firefox was closed: stopped reading sub-cases. Open the order again to read the rest.")
+                break
             if sid in failed:
                 data.errors.append(f"{sid}: {failed[sid]}")
                 log(f"  could not open {sid}")

@@ -140,7 +140,7 @@ def _best(name, found):
     want = {w for w in re.split(r"[\s,.-]+", name.lower()) if w}
     def score(rec):
         have = {w for w in re.split(r"[\s,.-]+", " ".join(
-            [rec.get("display_name", ""), rec.get("legalFirstName", ""), rec.get("legalLastName", "")]).lower()) if w}
+            [str(rec.get(k) or "") for k in ("display_name", "legalFirstName", "legalLastName")]).lower()) if w}
         return len(want & have)
     if not found:
         return []

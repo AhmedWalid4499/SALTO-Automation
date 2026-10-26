@@ -7,6 +7,8 @@ from datetime import datetime
 from . import config
 
 LOG = os.path.join(config.CONFIG_DIR, "error.log")
+# Firefox itself is gone (closed or crashed), not just one tab or page that misbehaved
+_GONE = r"Failed to decode response|connection refused|Tried to run command without establishing a connection|InvalidSessionId"
 
 # (pattern in the technical message, what the user reads)
 _RULES = [
@@ -18,9 +20,7 @@ _RULES = [
     (r"Unable to locate element|Not found:|no such element", "a part of the page was not shown in SALTO."),
     (r"stale element", "the SALTO page changed while it was being read."),
     (r"[Tt]imed? ?out|TimeoutException", "SALTO took too long to answer."),
-    (r"Browsing context has been discarded|no such window|Failed to decode response|"
-     r"connection refused|Tried to run command without establishing a connection|InvalidSessionId",
-     "Firefox was closed or stopped responding."),
+    (r"Browsing context has been discarded|no such window|" + _GONE, "Firefox was closed or stopped responding."),
     (r"PermissionError|being used by another process", "a file is open in another program (Excel?)."),
     (r"NS_ERROR_|neterror|dnsNotFound|ERR_NAME_NOT_RESOLVED", "SALTO could not be reached (Orange network / VPN?)."),
 ]
@@ -37,6 +37,11 @@ def clean(text):
     first = re.sub(r"^\w+(Exception|Error|Timeout):\s*(Message:\s*)?", "", first.split("; For documentation")[0])
     first = first.strip()[:140]
     return (first if first.endswith((".", "!", "?")) else first + ".") if first else "something unexpected happened."
+
+
+def browser_gone(exc):
+    """Firefox itself is gone (closed, crashed): nothing more can be read until it is started again."""
+    return bool(re.search(_GONE, f"{type(exc).__name__}: {exc}"))
 
 
 def friendly(exc):

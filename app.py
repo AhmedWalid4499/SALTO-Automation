@@ -222,12 +222,18 @@ class App:
         self._ui_q.put(fn)
 
     def _pump(self):
-        while not self._ui_q.empty():
-            try:
-                self._ui_q.get()()
-            except Exception:
-                self._report(*sys.exc_info())
-        self.root.after(80, self._pump)
+        try:
+            while not self._ui_q.empty():
+                try:
+                    self._ui_q.get()()
+                except tk.TclError as exc:
+                    if "invalid command name" not in str(exc) and "bad window path" not in str(exc):
+                        self._report(*sys.exc_info())
+                    # else: an update for a window the user already closed - nothing to show
+                except Exception:
+                    self._report(*sys.exc_info())
+        finally:
+            self.root.after(80, self._pump)  # never stop: every update from the other threads comes through here
 
     def log(self, msg, quiet=False):
         """quiet=True: activity log only, not the status bar."""
@@ -248,9 +254,12 @@ class App:
         self.ui(write)
 
     def _report(self, exc, val, tb):
-        os.makedirs(config.CONFIG_DIR, exist_ok=True)
-        with open(ERROR_LOG, "a", encoding="utf-8") as f:
-            f.write(f"\n[{datetime.now():%Y-%m-%d %H:%M:%S}]\n" + "".join(traceback.format_exception(exc, val, tb)))
+        try:
+            os.makedirs(config.CONFIG_DIR, exist_ok=True)
+            with open(ERROR_LOG, "a", encoding="utf-8") as f:
+                f.write(f"\n[{datetime.now():%Y-%m-%d %H:%M:%S}]\n" + "".join(traceback.format_exception(exc, val, tb)))
+        except OSError:
+            pass
         messagebox.showerror(APP_NAME, f"Something went wrong. {errors.friendly(val)}")
 
     # ------------------------------------------------------------ settings
@@ -330,7 +339,7 @@ class App:
                     check_key(k)
                     msg = "Key works"
                 except Exception as exc:
-                    msg = f"Key check failed: {str(exc).splitlines()[0][:90]}"
+                    msg = f"Key check failed: {(str(exc).splitlines() or [type(exc).__name__])[0][:90]}"
                 self.ui(lambda: key_state.configure(text=msg))
             threading.Thread(target=work, daemon=True).start()
         ttk.Button(f, text="Test", command=test_key).grid(row=15, column=1, padx=6, pady=(4, 0))
@@ -472,8 +481,9 @@ class App:
                 try:
                     path = updater.download(info, progress)
                 except Exception as exc:
-                    self.ui(lambda e=exc: (messagebox.showerror(APP_NAME, f"Download failed: {e}", parent=w),
-                                     dl.configure(state="normal", text="Download and install")))
+                    self.ui(lambda e=exc: (messagebox.showerror(APP_NAME, f"Download failed: {e}",
+                                                                parent=w if w.winfo_exists() else None),
+                                           w.winfo_exists() and dl.configure(state="normal", text="Download and install")))
                     return
                 self.ui(lambda: self._install(path))
             threading.Thread(target=work, daemon=True).start()

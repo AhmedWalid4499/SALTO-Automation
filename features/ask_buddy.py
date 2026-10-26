@@ -163,8 +163,10 @@ class AskBuddy(Feature):
             gid = f"order:{order or '-'}"
             t.insert("", "end", iid=gid, text=f"{order or 'No order'}  ({len(items)})", open=True, tags=("order",))
             for c in items:
-                when = time.strftime("%d %b", time.localtime(c.get("updated", 0)))
-                t.insert(gid, "end", iid=f"chat:{c['id']}", text=f"{c['title'][:34]}  · {when}")
+                if not c.get("id") or t.exists(f"chat:{c['id']}"):
+                    continue  # a damaged or duplicated chat file
+                when = time.strftime("%d %b", time.localtime(c.get("updated", 0) or 0))
+                t.insert(gid, "end", iid=f"chat:{c['id']}", text=f"{str(c.get('title') or 'Chat')[:34]}  · {when}")
         if select and t.exists(f"chat:{select}"):
             t.selection_set(f"chat:{select}")
             t.see(f"chat:{select}")
@@ -186,8 +188,8 @@ class AskBuddy(Feature):
         self.view.add_note(f"{c.get('order') or 'No order'} · started "
                            f"{time.strftime('%d %b %Y %H:%M', time.localtime(c.get('created', 0)))}")
         for turn in c.get("turns", []):
-            self.view.add_user(turn["q"], files=[d["name"] for d in turn.get("docs", [])])
-            self.view.add_bot().finish(turn["a"], on_copy=self._copy, files=turn.get("created", []))
+            self.view.add_user(turn.get("q", ""), files=[d.get("name", "") for d in turn.get("docs", [])])
+            self.view.add_bot().finish(turn.get("a", ""), on_copy=self._copy, files=turn.get("created", []))
         self.view.scroll_end()
 
     def _delete_selected(self):
@@ -240,20 +242,25 @@ class AskBuddy(Feature):
             key, source = self._fetch_team_key(status), "cache"
         if not self.bot or self.bot_key != key:
             from salto.assistant import Assistant
+            old = self.bot or getattr(self, "_old_bot", None)
             self.bot = Assistant(key, self.app.reports, self._open_order, log=self.app.log,
                                  find_person=self._find_person)
-            self.bot_key = key
+            if old is not None:  # a new key: the conversation goes on
+                self.bot.messages = list(old.messages)
+            self.bot_key, self._old_bot = key, None
         return source
 
     def key_changed(self):
-        self.bot = None  # rebuilt with the new key on the next question
+        if self.bot is not None:  # rebuilt with the new key on the next question, keeping the conversation
+            self._old_bot, self.bot = self.bot, None
 
     # ------------------------------------------------------------ tools that need the browser (chat thread, blocking)
     def _open_order(self, ref):
         """open_order tool: blocks until the Order explorer has read the order."""
         done, box = threading.Event(), {}
         self.app.ui(lambda: self.app.explorer.open_for_chat(ref, lambda rep, err: (box.update(rep=rep, err=err), done.set())))
-        done.wait()
+        if not done.wait(45 * 60):  # a big order takes minutes, never this long
+            raise TimeoutError(f"{ref} took too long to read")
         if box.get("err"):
             raise box["err"]
         return box.get("rep")

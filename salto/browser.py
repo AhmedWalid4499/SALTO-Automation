@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 
 from selenium import webdriver
 from selenium.common.exceptions import (ElementClickInterceptedException,
+                                        ElementNotInteractableException,
                                         NoSuchElementException,
                                         StaleElementReferenceException,
                                         WebDriverException)
@@ -21,6 +22,9 @@ from selenium.webdriver.firefox.service import Service
 
 SALTO_URL = ("https://web-salto-intl.com.intraorange/prweb/PRAuth/app/OFA_/"
              "msHWMWNvhSu2obrHYvzNGg*/!STANDARD")
+# when SALTO_URL does not get to the portal (does not load, Pega error page, stuck), this one is tried
+SALTO_FALLBACK_URL = "https://web-salto-intl.com.intraorange/prweb/PRAuth/OpenID"
+SALTO_URLS = (SALTO_URL, SALTO_FALLBACK_URL)
 FIREFOX_BIN = r"C:\Program Files\Mozilla Firefox\firefox.exe"
 # Dedicated profile so the tool never fights with your everyday Firefox
 # (a profile can only be open in one Firefox at a time).
@@ -59,6 +63,7 @@ class SaltoBrowser:
         # sign-in in SALTO Buddy's own windows (ui.signin): prompt(kind, **data); None: show Firefox instead
         self.prompt = None
         self.cfg = None              # app settings (remembered sign-in method)
+        self.url_index = 0           # which of SALTO_URLS is in use (the last one that worked)
 
     def set_visible(self, visible):
         """Takes effect the next time Firefox starts (a running Firefox cannot be hidden/shown)."""
@@ -133,16 +138,24 @@ class SaltoBrowser:
         (password, MFA) is left to you in the Firefox window.
         """
         self.start()
-        d = self.driver
-        d.switch_to.default_content()
+        try:
+            self.driver.switch_to.default_content()
+        except WebDriverException:  # Firefox closed or crashed just now: start a new one
+            self.quit()
+            self.start()
         if self._portal_ready():
             self.on_state("connected")
             return
         self.on_state("signing-in")
+        if self.cfg and not getattr(self, "_url_from_cfg", False):  # start with the link that worked last time
+            self._url_from_cfg = True
+            self.url_index = int(self.cfg.get("salto_url_index", 0) or 0) % len(SALTO_URLS)
         self._open_salto(timeout)
         deadline = time.time() + timeout
         asked = False
         stuck_since = None
+        salto_since = None   # on SALTO, but neither the portal nor its login page
+        error_pages = openid_clicks = 0
         signin = None
         use_app = self.prompt is not None and self.headless  # sign in through SALTO Buddy's windows
         while time.time() < deadline:
@@ -157,11 +170,18 @@ class SaltoBrowser:
                 if getattr(self, "shown_for_signin", False) and not self.visible:
                     self.shown_for_signin = False
                     self._out_of_sight()
+                self._remember_url()
                 self.log("Logged in to SALTO.")
                 self.on_state("connected")
                 return
             with suppress(NoSuchElementException, StaleElementReferenceException):
                 link = d.find_element(By.XPATH, "//a[contains(normalize-space(.), 'Login with OpenID')]")
+                openid_clicks += 1
+                if openid_clicks > 3:  # the login page keeps coming back: go through the other link
+                    openid_clicks = 0
+                    self._switch_url("SALTO keeps going back to its login page")
+                    self._open_salto(timeout)
+                    continue
                 self.log("Clicking 'Login with OpenID'...")
                 link.click()
                 time.sleep(3)
@@ -200,11 +220,26 @@ class SaltoBrowser:
                 time.sleep(3)
                 continue
             if self._on_salto() and self._pega_error_page():
-                # Pega's "There has been an issue" after an interrupted sign-in hand-off: open SALTO again
-                self.log("SALTO showed an error page after sign-in; opening it again...")
+                # Pega's "There has been an issue": once after a sign-in hand-off is normal (open SALTO again);
+                # again and again means this link does not work right now: try the other one
+                error_pages += 1
+                if error_pages >= 2:
+                    self._switch_url("SALTO keeps showing an error page")
+                else:
+                    self.log("SALTO showed an error page after sign-in; opening it again...")
                 self._open_salto(timeout)
+                salto_since = None
                 time.sleep(3)
                 continue
+            if self._on_salto():
+                salto_since = salto_since or time.time()
+                if time.time() - salto_since > 60:  # SALTO loaded but the portal never came
+                    self._switch_url("SALTO did not open")
+                    self._open_salto(timeout)
+                    salto_since = None
+                    continue
+            else:
+                salto_since = None
             if not self._on_salto():
                 stuck_since = stuck_since or time.time()
                 if self.headless and time.time() - stuck_since > 20:
@@ -230,20 +265,38 @@ class SaltoBrowser:
             self.log("Firefox is back out of sight.")
 
     def _open_salto(self, timeout):
-        """Load SALTO, waiting out network/VPN drops instead of failing."""
+        """Load SALTO, trying the fallback link when one fails, and waiting out network/VPN drops."""
         deadline, warned = time.time() + timeout, False
         while True:
-            try:
-                self.driver.get(SALTO_URL)
-                return
-            except WebDriverException as exc:
-                if "neterror" not in str(exc) or time.time() > deadline:
-                    raise
-                if not warned:
-                    self.log("SALTO is unreachable (VPN / network?). Waiting for the connection...")
-                    self.on_state("offline-network")
-                    warned = True
-                time.sleep(10)
+            failed = None
+            for _ in SALTO_URLS:  # the link in use, then the other one
+                try:
+                    self.driver.get(SALTO_URLS[self.url_index])
+                    return
+                except WebDriverException as exc:
+                    failed = exc
+                    # no network at all: both links fail the same way, no need to say so every time
+                    self._switch_url("SALTO did not load", quiet="neterror" in str(exc))
+            if "neterror" not in str(failed) or time.time() > deadline:
+                raise failed
+            if not warned:
+                self.log("SALTO is unreachable (VPN / network?). Waiting for the connection...")
+                self.on_state("offline-network")
+                warned = True
+            time.sleep(10)
+
+    def _switch_url(self, why, quiet=False):
+        self.url_index = (self.url_index + 1) % len(SALTO_URLS)
+        if not quiet:
+            which = "the usual SALTO link" if self.url_index == 0 else "the fallback SALTO link"
+            self.log(f"{why}: trying {which}...")
+
+    def _remember_url(self):
+        """Keep the link that got to the portal for next time."""
+        if self.cfg is not None and self.cfg.get("salto_url_index", 0) != self.url_index:
+            self.cfg["salto_url_index"] = self.url_index
+            with suppress(Exception):
+                self.save_cfg()
 
     def _pega_error_page(self):
         try:
@@ -337,6 +390,8 @@ class SaltoBrowser:
                 return
             except ElementClickInterceptedException:
                 time.sleep(1)
+            except ElementNotInteractableException:  # e.g. a tab header Firefox "could not scroll into view"
+                break
         d.execute_script("arguments[0].scrollIntoView({block: 'center'}); arguments[0].click();", el)
 
     def frame_with_text(self, *texts, timeout=30):

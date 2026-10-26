@@ -63,9 +63,10 @@ def all_chats():
         for name in os.listdir(CHAT_DIR):
             if name.endswith(".json"):
                 c = load(name[:-5])
-                if c and c.get("turns"):
+                if isinstance(c, dict) and c.get("turns"):  # skip damaged files
+                    c["id"] = name[:-5]  # the file name is what load() and delete() use
                     out.append(c)
-    return sorted(out, key=lambda c: c.get("updated", 0), reverse=True)
+    return sorted(out, key=lambda c: c.get("updated") or 0, reverse=True)
 
 
 def grouped():
@@ -73,16 +74,17 @@ def grouped():
     groups = {}
     for c in all_chats():
         groups.setdefault(c.get("order", ""), []).append(c)
-    return sorted(groups.items(), key=lambda kv: kv[1][0].get("updated", 0), reverse=True)
+    return sorted(groups.items(), key=lambda kv: kv[1][0].get("updated") or 0, reverse=True)
 
 
 def history_messages(chat):
     """The conversation as plain user/assistant turns, so a reopened chat can be continued."""
     msgs = []
     for t in chat.get("turns", []):
-        docs = [{"type": "document", "title": d["name"],
+        docs = [{"type": "document", "title": d.get("name") or "Document",
                  "source": {"type": "text", "media_type": "text/plain", "data": d["text"]}}
                 for d in t.get("docs", []) if d.get("text")]
-        user = docs + [{"type": "text", "text": t["q"] or "Here is a document."}] if docs else t["q"]
-        msgs += [{"role": "user", "content": user}, {"role": "assistant", "content": t["a"]}]
+        q = t.get("q") or ("Here is a document." if docs else "(no question)")  # the API refuses empty text
+        user = docs + [{"type": "text", "text": q}] if docs else q
+        msgs += [{"role": "user", "content": user}, {"role": "assistant", "content": t.get("a") or "(no answer)"}]
     return msgs

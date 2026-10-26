@@ -130,7 +130,14 @@ def open_case(b: SaltoBrowser, stc_id: str):
             except NoSuchElementException:
                 pass
         b.driver.switch_to.default_content()
-        cell = b.find_visible(f"//td[normalize-space(.)='{stc_id}']")
+        try:
+            cell = b.find_visible(f"//td[normalize-space(.)='{stc_id}']")
+        except NoSuchElementException:
+            if not attempt:
+                raise
+            # the results are gone: SALTO is opening the case (slowly), so wait for it rather than click again
+            b.frame_with_text(f"({stc_id})", "Overview", timeout=wait)
+            break
         # Results are often below the fold; the mouse can only act inside the viewport
         b.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", cell)
         deadline = time.time() + 30

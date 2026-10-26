@@ -17,7 +17,7 @@ import re
 import time
 from contextlib import suppress
 
-from selenium.common.exceptions import TimeoutException, WebDriverException
+from selenium.common.exceptions import StaleElementReferenceException, TimeoutException, WebDriverException
 from selenium.webdriver.common.by import By
 
 from . import errors, files
@@ -130,18 +130,27 @@ def fetch_parts(b, url, save_dir="", label="", log=print, timeout=90):
         d.set_page_load_timeout(60)
         with suppress(TimeoutException):
             d.get(url)
-        deadline = time.time() + timeout
         menu = None
-        while time.time() < deadline and not menu:  # FLIP is an Angular app: wait for the action menu
-            time.sleep(1.5)
-            # the menu button inside the innermost element labelled 'Work Flow Action Items' (not FLIP's other menus)
-            for e in d.find_elements(By.XPATH, "//*[contains(normalize-space(text()),'Work Flow Action Items')]"
-                                               "/ancestor-or-self::*[.//button[contains(@class,'mat-menu-trigger')]][1]"
-                                               "//button[contains(@class,'mat-menu-trigger')]"):
-                if e.is_displayed():
-                    menu = e
+        for attempt, wait in enumerate((timeout, 60)):
+            if attempt:  # FLIP sometimes stays blank or half-loaded: load it once more
+                log(f"FLIP is slow to show {label or 'the intervention'}; loading it again...")
+                with suppress(TimeoutException):
+                    d.get(url)
+            deadline = time.time() + wait
+            while time.time() < deadline and not menu:  # FLIP is an Angular app: wait for the action menu
+                time.sleep(1.5)
+                # the menu button inside the innermost element labelled 'Work Flow Action Items' (not FLIP's
+                # other menus)
+                for e in d.find_elements(By.XPATH, "//*[contains(normalize-space(text()),'Work Flow Action Items')]"
+                                                   "/ancestor-or-self::*[.//button[contains(@class,'mat-menu-trigger')]]"
+                                                   "[1]//button[contains(@class,'mat-menu-trigger')]"):
+                    with suppress(StaleElementReferenceException):
+                        if e.is_displayed():
+                            menu = e
+            if menu:
+                break
         if not menu:
-            raise RuntimeError("FLIP did not load (no 'Work Flow Action Items')")
+            raise RuntimeError(f"FLIP did not load the intervention ({_page_state(d)})")
         d.execute_script(_HOOK_JS)
         item = []
         for _ in range(10):  # FLIP may still be covering the page while it loads: retry until the menu opens
@@ -166,6 +175,22 @@ def fetch_parts(b, url, save_dir="", label="", log=print, timeout=90):
         with suppress(WebDriverException):
             d.close()
         d.switch_to.window(salto_tab)
+
+
+def _page_state(d):
+    """What FLIP showed instead of the intervention, in a few words (for the error and error.log)."""
+    try:
+        url, title, text = d.execute_script(
+            "return [location.href, document.title, document.body ? document.body.innerText : '']")
+    except WebDriverException:
+        return "Firefox did not answer"
+    where = re.sub(r"[?#].*", "", url or "")  # host and path: a query string can mention anything
+    if re.search(r"auth|login|adfs|microsoftonline", where, re.I):
+        return "it asked to sign in"
+    first = next((ln.strip() for ln in (text or "").splitlines() if ln.strip()), "")
+    if not first:
+        return "the page stayed empty"
+    return f"it showed '{(title or first)[:40]}': {first[:80]}"
 
 
 def _collect(d, timeout):

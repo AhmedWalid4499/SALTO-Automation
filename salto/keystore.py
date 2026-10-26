@@ -37,9 +37,15 @@ def protect(text: str) -> str:
 def unprotect(token: str) -> str:
     if not token:
         return ""
-    src, _keep = _blob(base64.b64decode(token))
+    try:
+        src, _keep = _blob(base64.b64decode(token))
+    except ValueError:  # damaged in config.json: treat as not set
+        return ""
     dst = _Blob()
     if not ctypes.windll.crypt32.CryptUnprotectData(ctypes.byref(src), None, None, None, None, 0,
                                                     ctypes.byref(dst)):
         return ""  # different user/machine: treat as not set
-    return _out(dst).decode("utf-8")
+    try:
+        return _out(dst).decode("utf-8")
+    except UnicodeDecodeError:
+        return ""

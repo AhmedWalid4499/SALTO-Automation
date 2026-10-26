@@ -78,6 +78,8 @@ class OrgChartFinder(Feature):
                                  + ". Select one to see their management chain. Ctrl+C copies rows.", fg=T.MUTED)
         t = Table(self.top, COLS, [_row(p) for p in people], height=min(len(people), 8))
         t.pack(fill="x")
+        # row id -> person, taken before any sorting (a sort moves rows, it keeps their ids)
+        self._by_row = dict(zip(t.tv.get_children(), people))
         t.tv.bind("<<TreeviewSelect>>", lambda e: self._chain(t))
         t.tv.selection_set(t.tv.get_children()[0])
 
@@ -85,7 +87,9 @@ class OrgChartFinder(Feature):
         sel = t.tv.selection()
         if not sel:
             return
-        p = self.people[t.tv.index(sel[0])]
+        p = self._by_row.get(sel[0])
+        if p is None:
+            return
         for w in self.low.winfo_children():
             w.destroy()
         rows = [{"Level": "Person", "Name": p["display_name"], "Email": p["email"], "Job title": p["busi_title"],

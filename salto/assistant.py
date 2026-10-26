@@ -11,6 +11,7 @@ import threading
 
 import anthropic
 
+from . import errors
 from .case import other_lines
 
 MODEL = "claude-opus-5-5"
@@ -357,7 +358,7 @@ class Assistant:
                 try:
                     content, is_error = self._tool(block.name, block.input, status)
                 except Exception as exc:  # a SALTO problem becomes a tool error Claude can explain
-                    content, is_error = _json({"error": str(exc).splitlines()[0][:300]}), True
+                    content, is_error = _json({"error": errors.note(exc)[:300]}), True
                 results.append({"type": "tool_result", "tool_use_id": block.id, "content": content,
                                 "is_error": is_error})
             self.messages.append({"role": "user", "content": results})

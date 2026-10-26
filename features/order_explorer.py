@@ -118,14 +118,23 @@ class OrderExplorer(Feature):
         self.go(callback)
 
     def go(self, callback=None):
-        """Phase 1 reads the main case and shows it; phase 2 (sub-cases, FLIP) fills in afterwards."""
+        """Phase 1 reads the main case and shows it; phase 2 (sub-cases, FLIP) fills in afterwards.
+
+        callback(rep, error) - Ask Buddy's - is called exactly once, for this read only."""
         ref = self.order.get().strip()
         if not ref or str(self.open_btn.cget("state")) == "disabled":
+            if callback:
+                callback(None, RuntimeError("No order number was given" if not ref else
+                                            "SALTO Buddy is already reading an order; try again when it is done"))
             return
         if getattr(self, "_cancel", None):
             self._cancel.set()  # stop the previous order's sub-cases
+        prev = getattr(self, "_read", None)
+        if prev and prev.get("cb"):  # the bot was waiting for the previous order: give it what was read
+            self._deliver(prev, prev.get("rep"),
+                          None if prev.get("rep") else RuntimeError("Another order was opened meanwhile"))
         self._cancel = threading.Event()
-        self._callback = callback
+        read = self._read = {"cb": callback, "rep": None, "cancel": self._cancel}
         cfg = self.app.cfg
         opts = Options(subcases=cfg.get("subcases", True), downloads=cfg.get("downloads", False),
                        tab_screenshots=cfg.get("tab_screenshots", False), flip=cfg.get("flip", True),
@@ -139,7 +148,14 @@ class OrderExplorer(Feature):
         if not cached:
             self.title_lbl.configure(text=f"{ref} · reading SALTO...")
         self.run(lambda b: order_lookup(b, ref, cfg["export_dir"], full=True, opts=opts),
-                 lambda rep: self._phase1_done(rep, opts), self.failed, busy_widgets=(self.open_btn,))
+                 lambda rep: self._phase1_done(rep, opts, read), lambda exc: self.failed(exc, read),
+                 busy_widgets=(self.open_btn,))
+
+    @staticmethod
+    def _deliver(read, rep, err=None):
+        cb = read.pop("cb", None)
+        if cb:
+            cb(rep, err)
 
     def _progress(self, on):
         if on:
@@ -153,15 +169,19 @@ class OrderExplorer(Feature):
         self.app.busy(False)
         self._progress(False)
 
-    def _phase1_done(self, rep, opts):
+    def _phase1_done(self, rep, opts, read):
+        read["rep"] = rep
         pending = bool(rep.case and rep.case.pending_subs)
-        self.show(rep, note=f"reading {len(rep.case.pending_subs)} sub-case(s) and FLIP..." if pending else "",
-                  keep_callback=pending)
         if not pending:
-            cache.save(rep)
-            self._org_lookup(rep)
-            self._ready_notice(rep)
+            try:
+                self.show(rep)
+                cache.save(rep)
+                self._org_lookup(rep)
+                self._ready_notice(rep)
+            finally:
+                self._deliver(read, rep)
             return
+        self.show(rep, note=f"reading {len(rep.case.pending_subs)} sub-case(s) and FLIP...")
         self.app.busy(True, "Reading sub-cases and FLIP...")
         self._progress(True)
         total = len(rep.case.pending_subs)
@@ -172,7 +192,7 @@ class OrderExplorer(Feature):
         def phase2(b):
             return read_subcases(b, rep.case, opts, self.app.log, read_stages, on_each=each)
 
-        self.run(phase2, lambda _r: self._phase2_done(rep), lambda exc: self._phase2_done(rep, exc))
+        self.run(phase2, lambda _r: self._phase2_done(rep, read), lambda exc: self._phase2_done(rep, read, exc))
 
     def _sub_ready(self, rep, total):
         if self.rep is not rep:
@@ -180,22 +200,23 @@ class OrderExplorer(Feature):
         done = len(rep.case.subcases)
         self._refresh_live(note=f"sub-cases read: {done} of {total}" + ("" if done == total else "..."))
 
-    def _phase2_done(self, rep, exc=None):
-        self._done_busy()
-        for sc in rep.case.subcases:  # EQPs found in sub-cases
-            if sc.stc_id.startswith("EQP-") and sc.stc_id not in rep.eqps:
-                rep.eqps.append(sc.stc_id)
-        if exc:
-            self.app.log(f"Reading sub-cases stopped: {errors.note(exc)}")
-        if not rep.case.pending_subs:
-            cache.save(rep)
-        if self.rep is rep:
-            self._refresh_live(note="")
-        self._org_lookup(rep)
-        self._ready_notice(rep, exc)
-        cb, self._callback = getattr(self, "_callback", None), None
-        if cb:
-            cb(rep, None)
+    def _phase2_done(self, rep, read, exc=None):
+        try:
+            self._done_busy()
+            for sc in rep.case.subcases:  # EQPs found in sub-cases
+                if sc.stc_id.startswith("EQP-") and sc.stc_id not in rep.eqps:
+                    rep.eqps.append(sc.stc_id)
+            if exc:
+                self.app.log(f"Reading sub-cases stopped: {errors.note(exc)}")
+            if not rep.case.pending_subs:
+                cache.save(rep)
+            if self.rep is rep:
+                self._refresh_live(note="")
+            self._org_lookup(rep)
+            if not read["cancel"].is_set():  # not when another order was opened (that stopped this one)
+                self._ready_notice(rep, exc or (RuntimeError("stopped") if rep.case.pending_subs else None))
+        finally:
+            self._deliver(read, rep)
 
     def _ready_notice(self, rep, exc=None):
         """Notification: the whole order (sub-cases, serial numbers) has been read."""
@@ -246,12 +267,11 @@ class OrderExplorer(Feature):
                                                                 case.title if case else "", customer) if x)
                                  + (f"     ({note})" if note else ""))
 
-    def failed(self, exc):
+    def failed(self, exc, read=None):
         self._done_busy()
         self.title_lbl.configure(text="")
-        cb, self._callback = getattr(self, "_callback", None), None
-        if cb:  # opened from Ask Buddy: the chat reports the error
-            cb(None, exc)
+        if read and read.get("cb"):  # opened from Ask Buddy: the chat reports the error
+            self._deliver(read, None, exc)
             return
         self.app.notify(f"{self.order.get().strip() or 'The order'} could not be opened", errors.friendly(exc),
                         page=self, kind="error", only_if_away=True)
@@ -296,21 +316,22 @@ class OrderExplorer(Feature):
         path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx")],
                                             initialdir=self._folder(), initialfile=f"{self.rep.order_ref}.xlsx")
         if path:
-            export_report(self.rep, path)
+            try:
+                export_report(self.rep, path)
+            except OSError as exc:
+                messagebox.showerror("SALTO Buddy", f"Could not save {os.path.basename(path)}.\n\n"
+                                     f"{errors.friendly(exc)}")
+                return
             self.app.log(f"Saved {path}")
             if messagebox.askyesno("SALTO Buddy", f"Saved to {path}\n\nOpen it now?"):
                 os.startfile(path)
 
     # ------------------------------------------------------------ results
-    def show(self, rep, note="", keep_callback=False):
+    def show(self, rep, note=""):
         self._done_busy()
         self.rep = rep
         if rep.stc_id:
             self.app.reports[rep.order_ref] = rep  # shared with Ask Buddy
-        if not keep_callback and not note.startswith("saved copy"):
-            cb, self._callback = getattr(self, "_callback", None), None
-            if cb:
-                cb(rep, None)
         case = rep.case
         self._set_title(rep, note)
         self.export_btn.configure(state="normal" if rep.stc_id else "disabled")

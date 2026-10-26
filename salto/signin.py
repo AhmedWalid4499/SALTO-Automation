@@ -155,7 +155,7 @@ class SignIn:
             # number matching: show the number to tap in the Authenticator app
             nums = [e.text.strip() for e in d.find_elements(By.ID, "idRichContext_DisplaySign") if e.is_displayed()]
             if nums and nums[0]:
-                self._wait(f"Open Microsoft Authenticator on your phone and tap this number:", code=nums[0],
+                self._wait("Open Microsoft Authenticator on your phone and tap this number:", code=nums[0],
                            title="Approve the sign-in")
                 return True
             body = d.execute_script("return document.body ? document.body.innerText.slice(0, 1500) : ''") or ""
@@ -171,10 +171,11 @@ class SignIn:
                         time.sleep(2)
                         return True
             # account picker: pick the only account, otherwise ask which one
+            # (only tiles with a name: the list asked and the list clicked must be the same)
             tiles = [t for t in d.find_elements(By.CSS_SELECTOR, "#tilesHolder [data-test-id], #tilesHolder .table")
-                     if t.is_displayed()]
+                     if t.is_displayed() and t.text.strip()]
             if tiles:
-                names = [t.text.strip().splitlines()[0] for t in tiles if t.text.strip()]
+                names = [t.text.strip().splitlines()[0] for t in tiles]
                 if len(tiles) == 1:
                     tiles[0].click()
                     time.sleep(2)
