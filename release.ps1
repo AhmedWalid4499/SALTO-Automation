@@ -29,11 +29,17 @@ git add -A
 git diff --cached --quiet
 if ($LASTEXITCODE -ne 0) {   # skip if already committed
     $msgTmp = Join-Path $env:TEMP "salto-buddy-commit.txt"
-    Set-Content -Path $msgTmp -Value "Release $tag`n`n$Notes" -Encoding utf8
+    # no BOM: Windows PowerShell's "utf8" adds one, and it ends up in the commit title
+    [IO.File]::WriteAllText($msgTmp, "Release $tag`n`n$Notes", (New-Object Text.UTF8Encoding $false))
     git commit -F $msgTmp
 }
 git tag $tag
 git push origin HEAD --tags
+if ($LASTEXITCODE -ne 0) {
+    # OneDrive may keep some of git's files online-only ("Permission denied"): read them all, push again
+    Get-ChildItem .git\objects -Recurse -File | ForEach-Object { $null = [IO.File]::ReadAllBytes($_.FullName) }
+    git push origin HEAD --tags
+}
 if ($LASTEXITCODE -ne 0) { throw "git push failed" }
 
 # notes go through a file: Windows PowerShell mangles quotes inside arguments to native programs
