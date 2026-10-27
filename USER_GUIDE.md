@@ -122,6 +122,8 @@ Click the paperclip next to the message box to attach Word (.docx), PDF or text 
 
 Chats are saved on this PC and listed on the left, grouped by order number: click one to read it again or to continue it (Buddy remembers the conversation). '+ New chat' starts a fresh one; right-click a chat to delete it.
 
+Your chats stay confidential: they are kept only on this PC (never in OneDrive or any cloud), encrypted so that only you, signed in to Windows on this PC, can open them. To answer, the question and the SALTO details it needs are sent to Claude (Anthropic); SALTO Buddy stores no chat there.
+
 Answers start with the short answer, then the details: bullets for a few facts, a table for lists (devices, serial numbers, sub-cases...). Click a table's column title to sort it. 'Copy answer' under each answer copies it as clean text: tables paste as columns in Excel and as text in Outlook.
 
 The bot only uses what SALTO shows. If a field does not exist in SALTO (for example a serial number), it says so and offers the closest fields. Answers come from Claude (Anthropic): your question and the order data it needs are sent there.

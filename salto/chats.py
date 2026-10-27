@@ -1,4 +1,7 @@
-"""Saved Ask Buddy conversations, one JSON file each in %APPDATA%\\SALTO Buddy\\chats (per Windows user).
+"""Saved Ask Buddy conversations: confidential, so they never leave this PC.
+
+One file per chat in %LOCALAPPDATA%\\SaltoBuddy\\chats - the local part of the Windows profile, which is never
+roamed or synced - encrypted with Windows DPAPI (keystore): only this Windows user on this PC can read them.
 
 A chat belongs to the GOLD order it is about (named in the first question, or the order open in Order explorer),
 so the chat list can group them by order.
@@ -10,9 +13,12 @@ import time
 import uuid
 from contextlib import suppress
 
+from . import keystore
 from .config import CONFIG_DIR
 
-CHAT_DIR = os.path.join(CONFIG_DIR, "chats")
+CHAT_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "SaltoBuddy", "chats")
+EXT = ".chat"
+_OLD_DIR = os.path.join(CONFIG_DIR, "chats")  # before 1.15.1: plain JSON in the roaming profile
 ORDER_RE = re.compile(r"\b\d{2}-\d{6,8}\b")  # GOLD order, e.g. 10-1764901
 
 
@@ -36,35 +42,62 @@ def add_turn(chat, question, answer, documents=(), created=()):
     save(chat)
 
 
+def _path(chat_id):
+    return os.path.join(CHAT_DIR, chat_id + EXT)
+
+
 def save(chat):
     os.makedirs(CHAT_DIR, exist_ok=True)
-    path = os.path.join(CHAT_DIR, chat["id"] + ".json")
-    with open(path + ".tmp", "w", encoding="utf-8") as f:
-        json.dump(chat, f, ensure_ascii=False)
+    path = _path(chat["id"])
+    with open(path + ".tmp", "w", encoding="ascii") as f:
+        f.write(keystore.protect(json.dumps(chat, ensure_ascii=False)))
     os.replace(path + ".tmp", path)
 
 
 def load(chat_id):
     with suppress(OSError, ValueError):
-        with open(os.path.join(CHAT_DIR, chat_id + ".json"), encoding="utf-8") as f:
-            return json.load(f)
+        with open(_path(chat_id), encoding="ascii") as f:
+            text = keystore.unprotect(f.read().strip())
+        return json.loads(text) if text else None  # "": another user or PC, or a damaged file
     return None
 
 
 def delete(chat_id):
     with suppress(OSError):
-        os.remove(os.path.join(CHAT_DIR, chat_id + ".json"))
+        os.remove(_path(chat_id))
+
+
+def _move_old_chats():
+    """Chats saved by older versions (plain files in the roaming profile): encrypt them here, then remove them."""
+    with suppress(OSError):
+        names = [n for n in os.listdir(_OLD_DIR) if n.endswith(".json")]
+        for name in names:
+            old = os.path.join(_OLD_DIR, name)
+            try:
+                with open(old, encoding="utf-8") as f:
+                    chat = json.load(f)
+                if not isinstance(chat, dict):
+                    continue
+                chat["id"] = name[:-5]
+                save(chat)
+                if load(chat["id"]) == chat:  # safely in the new place: only then remove the plain copy
+                    os.remove(old)
+            except (OSError, ValueError):
+                continue
+        with suppress(OSError):
+            os.rmdir(_OLD_DIR)  # only if it is empty now
 
 
 def all_chats():
-    """Every saved chat (without its turns' text loaded lazily: they are small), newest first."""
+    """Every saved chat, newest first."""
+    _move_old_chats()
     out = []
     with suppress(OSError):
         for name in os.listdir(CHAT_DIR):
-            if name.endswith(".json"):
-                c = load(name[:-5])
+            if name.endswith(EXT):
+                c = load(name[:-len(EXT)])
                 if isinstance(c, dict) and c.get("turns"):  # skip damaged files
-                    c["id"] = name[:-5]  # the file name is what load() and delete() use
+                    c["id"] = name[:-len(EXT)]  # the file name is what load() and delete() use
                     out.append(c)
     return sorted(out, key=lambda c: c.get("updated") or 0, reverse=True)
 

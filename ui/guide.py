@@ -150,6 +150,10 @@ GUIDE = [
         ("p", "Chats are saved on this PC and listed on the left, grouped by order number: click one to read it "
               "again or to continue it (Buddy remembers the conversation). '+ New chat' starts a fresh one; "
               "right-click a chat to delete it."),
+        ("p", "Your chats stay confidential: they are kept only on this PC (never in OneDrive or any cloud), "
+              "encrypted so that only you, signed in to Windows on this PC, can open them. To answer, the "
+              "question and the SALTO details it needs are sent to Claude (Anthropic); SALTO Buddy stores no chat "
+              "there."),
         ("p", "Answers start with the short answer, then the details: bullets for a few facts, a table for lists "
               "(devices, serial numbers, sub-cases...). Click a table's column title to sort it. 'Copy answer' under "
               "each answer copies it as clean text: tables paste as columns in Excel and as text in Outlook."),
@@ -244,7 +248,8 @@ def show_whats_new(app):
 
     def page_new(d):
         d.title("What's new")
-        for s in ["Sign in from SALTO Buddy: when Orange asks you to sign in, choose Orange PKI, GroupIdentity or "
+        for s in ["Confidential chats: saved chats are encrypted and kept only on this PC - never in a cloud.",
+                  "Sign in from SALTO Buddy: when Orange asks you to sign in, choose Orange PKI, GroupIdentity or "
                   "Microsoft in a SALTO Buddy window. With PKI, just type your PIN in the password window - no "
                   "Firefox page to deal with.",
                   "The Friendly SALTO Bot reads documents: attach a Word, PDF or text file and it understands "
