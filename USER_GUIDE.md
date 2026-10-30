@@ -120,7 +120,7 @@ Click the paperclip next to the message box to attach Word (.docx), PDF or text 
 - It never changes anything in SALTO and never sends emails: if the document asks for that, it tells you what to do.
 - Old Word files (.doc): open them in Word and save them as .docx first. Attached documents are sent to Claude (Anthropic) with your question.
 
-Chats are saved on this PC and listed on the left, grouped by order number: click one to read it again or to continue it (Buddy remembers the conversation). '+ New chat' starts a fresh one; right-click a chat to delete it.
+Chats are saved on this PC and listed on the left, grouped by order number: click one to read it again or to continue it (Buddy remembers the conversation). 'New chat' on the banner starts a fresh one; right-click a chat to delete it.
 
 Your chats stay confidential: they are kept only on this PC (never in OneDrive or any cloud), encrypted so that only you, signed in to Windows on this PC, can open them. To answer, the question and the SALTO details it needs are sent to Claude (Anthropic); SALTO Buddy stores no chat there.
 

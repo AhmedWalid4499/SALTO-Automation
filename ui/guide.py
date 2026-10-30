@@ -148,7 +148,7 @@ GUIDE = [
                   "Old Word files (.doc): open them in Word and save them as .docx first. Attached documents are "
                   "sent to Claude (Anthropic) with your question."]),
         ("p", "Chats are saved on this PC and listed on the left, grouped by order number: click one to read it "
-              "again or to continue it (Buddy remembers the conversation). '+ New chat' starts a fresh one; "
+              "again or to continue it (Buddy remembers the conversation). 'New chat' on the banner starts a fresh one; "
               "right-click a chat to delete it."),
         ("p", "Your chats stay confidential: they are kept only on this PC (never in OneDrive or any cloud), "
               "encrypted so that only you, signed in to Windows on this PC, can open them. To answer, the "
@@ -216,7 +216,7 @@ def show_guide(root, start="Getting started"):
                             resizable=True)
     body = ttk.PanedWindow(inner, orient="horizontal")
     body.pack(fill="both", expand=True)
-    left = tk.Frame(body, bg=T.ZEBRA)
+    left = tk.Frame(body, bg=T.FIELD)
     nav = ttk.Treeview(left, show="tree", style="Nav.Treeview", selectmode="browse")
     nav.column("#0", width=200)
     nav.pack(fill="both", expand=True, padx=4, pady=4)
@@ -248,7 +248,9 @@ def show_whats_new(app):
 
     def page_new(d):
         d.title("What's new")
-        for s in ["Confidential chats: saved chats are encrypted and kept only on this PC - never in a cloud.",
+        for s in ["A new look: a modern Windows 11 design with a dark menu, smooth edges everywhere and new icons.",
+                  "The Friendly SALTO Bot has a new home: a flowing banner, and an animated bot that floats and glows.",
+                  "Confidential chats: saved chats are encrypted and kept only on this PC - never in a cloud.",
                   "Sign in from SALTO Buddy: when Orange asks you to sign in, choose Orange PKI, GroupIdentity or "
                   "Microsoft in a SALTO Buddy window. With PKI, just type your PIN in the password window - no "
                   "Firefox page to deal with.",

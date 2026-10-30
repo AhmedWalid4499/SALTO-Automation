@@ -2,6 +2,7 @@
 asks, wait for a PIN or a phone approval. Called from the browser thread; the windows live on the Tk thread."""
 import threading
 import tkinter as tk
+from tkinter import ttk
 
 from . import theme as T
 from .dialogs import shell
@@ -56,8 +57,7 @@ class SignInPrompter:
             for widget in (card, card.inner, row, text, *text.winfo_children()):
                 widget.bind("<Button-1>", pick)
         if remember:
-            tk.Checkbutton(foot, text="Remember my choice", variable=keep, bg=T.CANVAS, activebackground=T.CANVAS,
-                           font=T.F_SMALL, selectcolor=T.CARD).pack(side="left")
+            ttk.Checkbutton(foot, text="Remember my choice", variable=keep, style="Canvas.TCheckbutton").pack(side="left")
         RoundButton(foot, "Show Firefox instead", lambda: w.destroy(), kind="soft", padx=14,
                     height=32).pack(side="right")
         w.protocol("WM_DELETE_WINDOW", w.destroy)
@@ -113,7 +113,7 @@ class SignInPrompter:
         tk.Label(body, text=data["message"], bg=T.CARD, fg=T.INK, font=T.F_BODY, justify="left", anchor="w",
                  wraplength=int(380 * _scale(w))).pack(fill="x")
         if data.get("code"):
-            tk.Label(body, text=data["code"], bg=T.CARD, fg=T.ORANGE, font=(T.FONT, 36, "bold")).pack(pady=(10, 0))
+            tk.Label(body, text=data["code"], bg=T.CARD, fg=T.ORANGE, font=(T.FONT_HEAD, 36)).pack(pady=(10, 0))
         tk.Label(foot, text="Waiting for the sign-in...", bg=T.CANVAS, fg=T.MUTED, font=T.F_SMALL).pack(side="left")
         w.attributes("-topmost", True)
         self.wait_win = w

@@ -9,13 +9,14 @@ from salto import chats, config, errors, keystore
 from ui import dialogs as messagebox
 from ui import rich
 from ui import theme as T
+from ui.bot_kit import AIBanner, Bot
 from ui.chatview import ChatView
-from ui.robot import Robot
-from ui.widgets import IconButton, RoundButton, RoundEntry
+from ui.widgets import IconButton, RoundButton, RoundCard, RoundEntry
 
 from .base import Feature
 
 BOT_NAME = "The Friendly SALTO Bot"
+HINT = "Reads SALTO and the Org Chart for you. It never changes anything in SALTO."
 # suggestion label -> the question it asks
 EXAMPLES = {"Site address": "What is the site address and who is the local contact?",
             "Serial numbers": "Serial numbers of the devices in creation",
@@ -25,7 +26,7 @@ EXAMPLES = {"Site address": "What is the site address and who is the local conta
 
 class AskBuddy(Feature):
     title = BOT_NAME
-    icon = ""
+    icon = "\uE99A"  # robot
     subtitle = "Chat about any order, in your own words"
     nav_title = "SALTO Bot"
 
@@ -39,36 +40,30 @@ class AskBuddy(Feature):
         parent = tk.Frame(parent, bg=T.CARD)
         parent.pack(side="left", fill="both", expand=True)
 
-        # header: the robot (it thinks when the bot works), its name, which order is open
-        head = tk.Frame(parent, bg=T.CARD)
-        head.pack(fill="x")
+        # header: the flowing banner with the bot, its name, what it does, the order in view and New chat
         k = max(1.0, parent.winfo_fpixels("1i") / 96)
-        self.face = Robot(head, size=int(46 * k), shadow=False, bg=T.CARD)
-        self.face.pack(side="left")
-        names = tk.Frame(head, bg=T.CARD)
-        names.pack(side="left", padx=(8, 0))
-        tk.Label(names, text=BOT_NAME, bg=T.CARD, fg=T.INK, font=T.F_BOLD, anchor="w").pack(anchor="w")
-        self.ctx = tk.Label(names, text="", bg=T.CARD, fg=T.MUTED, font=T.F_SMALL, anchor="w")
-        self.ctx.pack(anchor="w")
-        tk.Frame(parent, bg=T.LINE, height=1).pack(fill="x", pady=(8, 0))
+        self.banner = AIBanner(parent, BOT_NAME, HINT, on_new=self.new_chat, height=int(62 * k))
+        self.banner.pack(fill="x", pady=(0, 6))
 
         # the message box is pinned to the bottom; the conversation takes the rest
         row = tk.Frame(parent, bg=T.CARD)
         row.pack(side="bottom", fill="x", pady=(8, 0))
-        IconButton(row, "", "Attach a Word, PDF or text document", self.attach).pack(side="left",
+        IconButton(row, "\uE723", "Attach a Word, PDF or text document", self.attach, size=38).pack(side="left",
                                                                                             padx=(0, 8))
-        self.entry = RoundEntry(row, width=300)
+        self.entry = RoundEntry(row, width=300, placeholder="Ask about an order...")
         self.entry.pack(side="left", fill="x", expand=True)
         self.entry.bind("<Return>", lambda e: self.send())
-        self.send_btn = RoundButton(row, "Send", self.send)
+        self.send_btn = RoundButton(row, "Send", self.send, kind="ai", icon="\uE724", height=38)
         self.send_btn.pack(side="left", padx=(8, 0))
         # documents attached to the next message: one chip each, x to remove
         self.docs = []
         self.doc_row = tk.Frame(parent, bg=T.CARD)
         self.doc_row.pack(side="bottom", fill="x")
-        tk.Label(parent, text="Answers come from Claude (Anthropic) and only use what SALTO shows. Attached "
-                              "documents are sent to Claude too.", bg=T.CARD,
-                 fg=T.SUBTLE, font=T.F_SMALL).pack(side="bottom", anchor="w", pady=(6, 0))
+        note = tk.Label(parent, text="Answers come from Claude (Anthropic) and only use what SALTO shows. Attached "
+                                     "documents are sent to Claude too.", bg=T.CARD, fg=T.SUBTLE, font=T.F_SMALL,
+                        anchor="w", justify="left")
+        note.pack(side="bottom", fill="x", pady=(6, 0))
+        note.bind("<Configure>", lambda e: note.configure(wraplength=max(200, e.width - 4)))
 
         self.area = tk.Frame(parent, bg=T.CARD)
         self.area.pack(fill="both", expand=True)
@@ -83,14 +78,14 @@ class AskBuddy(Feature):
         box = tk.Frame(w, bg=T.CARD)
         box.place(relx=0.5, rely=0.45, anchor="center")
         k = max(1.0, parent.winfo_fpixels("1i") / 96)
-        Robot(box, size=int(110 * k), bg=T.CARD).pack()
-        tk.Label(box, text=f"Hi! I'm {BOT_NAME}", bg=T.CARD, fg=T.INK, font=T.F_TITLE).pack(pady=(6, 2))
+        Bot(box, size=int(130 * k), bg=T.CARD).pack()
+        tk.Label(box, text=f"Hi! I'm {BOT_NAME}", bg=T.CARD, fg=T.INK, font=T.F_TITLE).pack(pady=(4, 2))
         tk.Label(box, text="Ask me anything about an order: its site, devices, serial numbers, people or sub-cases.",
                  bg=T.CARD, fg=T.MUTED, font=T.F_SMALL, wraplength=int(360 * k), justify="center").pack()
         chips = tk.Frame(box, bg=T.CARD)
         chips.pack(pady=(14, 0))
         for i, (label, question) in enumerate(EXAMPLES.items()):
-            RoundButton(chips, label, lambda q=question: self._ask_example(q), kind="soft", padx=14, height=32,
+            RoundButton(chips, label, lambda q=question: self._ask_example(q), kind="ai_soft", padx=14, height=32,
                         font=T.F_SMALL).grid(row=i // 2, column=i % 2, padx=4, pady=4)
         return w
 
@@ -114,8 +109,7 @@ class AskBuddy(Feature):
 
     def _update_ctx(self):
         cur = self._current()
-        self.ctx.configure(text=("Working..." if self.busy else "Online") + "   ·   "
-                           + (f"order open: {cur}" if cur else "no order open"))
+        self.banner.set(hint="Working on it..." if self.busy else HINT, chip=f"Order {cur}" if cur else "")
 
     def new_chat(self):
         if self.busy:
@@ -135,13 +129,13 @@ class AskBuddy(Feature):
         top = tk.Frame(side, bg=T.CARD)
         top.pack(fill="x", pady=(0, 8))
         tk.Label(top, text="Chats", bg=T.CARD, fg=T.INK, font=T.F_SECTION).pack(side="left")
-        RoundButton(top, "+ New chat", self.new_chat, kind="dark", padx=14, height=32).pack(side="right")
-        box = tk.Frame(side, bg=T.FIELD)
-        box.pack(fill="both", expand=True)
         k = max(1.0, parent.winfo_fpixels("1i") / 96)
+        card = RoundCard(side, fill=T.FIELD, radius=12, pad=4, shadow=False, width=int(216 * k))
+        card.pack(fill="both", expand=True)
+        box = card.inner
         self.tree = ttk.Treeview(box, show="tree", style="Nav.Treeview", selectmode="browse")
         self.tree.column("#0", width=int(185 * k))
-        self.tree.pack(side="left", fill="both", expand=True, padx=4, pady=4)
+        self.tree.pack(side="left", fill="both", expand=True)
         self.tree.tag_configure("order", font=T.F_SMALL_BOLD, foreground=T.MUTED)
         self.tree.bind("<<TreeviewSelect>>", lambda e: self._open_selected())
         menu = tk.Menu(self.tree, tearoff=0)
@@ -149,8 +143,8 @@ class AskBuddy(Feature):
         self.tree.bind("<Button-3>", lambda e: (self.tree.identify_row(e.y).startswith("chat:")
                                                  and (self.tree.selection_set(self.tree.identify_row(e.y)),
                                                       menu.tk_popup(e.x_root, e.y_root))))
-        tk.Label(side, text="Saved on this PC. Right-click a chat to delete it.", bg=T.CARD, fg=T.SUBTLE,
-                 font=T.F_SMALL, anchor="w").pack(fill="x", pady=(6, 0))
+        tk.Label(side, text="Encrypted, on this PC only.\nRight-click a chat to delete it.", bg=T.CARD, fg=T.SUBTLE,
+                 font=T.F_SMALL, anchor="w", justify="left").pack(fill="x", pady=(6, 0))
         self._fill_tree()
 
     def _fill_tree(self, select=None):
@@ -303,7 +297,7 @@ class AskBuddy(Feature):
         for doc in self.docs:
             chip = tk.Frame(self.doc_row, bg=T.ORANGE_TINT)
             chip.pack(side="left", padx=(0, 6), pady=(8, 0))
-            tk.Label(chip, text="", font=(T.ICONS, 11), bg=T.ORANGE_TINT, fg=T.ORANGE).pack(side="left",
+            tk.Label(chip, text="\uE8A5", font=(T.ICONS, 11), bg=T.ORANGE_TINT, fg=T.ORANGE).pack(side="left",
                                                                                               padx=(8, 4), pady=4)
             size = f"{doc['chars'] // 1000 + 1}k characters" if doc["kind"] == "text" else \
                 f"PDF, {doc['size'] // 1024 + 1} KB"
@@ -329,7 +323,6 @@ class AskBuddy(Feature):
         msg = self.view.add_bot()
         self.busy = True
         self.send_btn.configure(state="disabled")
-        self.face.set_mode("thinking")
         self._update_ctx()
         cur = self._current()
 
@@ -368,7 +361,6 @@ class AskBuddy(Feature):
     def _answer(self, msg, answer, ok, question, cur, docs=(), created=()):
         self.busy = False
         self.send_btn.configure(state="normal")
-        self.face.set_mode("idle")
         self._update_ctx()
         if not ok:
             msg.error(answer)

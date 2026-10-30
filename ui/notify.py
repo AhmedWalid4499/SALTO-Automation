@@ -4,12 +4,12 @@ import ctypes
 import tkinter as tk
 from ctypes import wintypes
 
+from . import gfx
 from . import theme as T
 from .dialogs import logo
-from .widgets import RoundCard, _scale
+from .widgets import _scale
 
-_KEY = "#010203"  # window colour made transparent: the card's rounded corners show the desktop
-_open = []        # toasts on screen, stacked upwards
+_open = []  # toasts on screen, stacked upwards
 
 
 def _work_area():
@@ -49,15 +49,13 @@ def show(root, title, message, on_open=None, kind="done", seconds=9, sound=False
     t = tk.Toplevel(root)
     t.overrideredirect(True)
     t.attributes("-topmost", True)
-    t.configure(bg=_KEY)
-    try:
-        t.attributes("-transparentcolor", _KEY)
-    except tk.TclError:
-        pass
-    card = RoundCard(t, radius=18, pad=14, fit=True, shadow=True, width=width)
-    card.configure(bg=_KEY)
-    card.pack(fill="x")
-    row = tk.Frame(card.inner, bg=T.CARD)
+    t.configure(bg=T.CARD)
+    # a plain window: Windows rounds its corners smoothly and gives it a shadow (see gfx.window_frame)
+    card = tk.Frame(t, bg=T.CARD, padx=int(14 * k), pady=int(12 * k), highlightthickness=1,
+                    highlightbackground=T.BORDER)
+    card.pack(fill="both", expand=True)
+    tk.Frame(card, bg=T.CARD, width=width - int(30 * k), height=0).pack()
+    row = tk.Frame(card, bg=T.CARD)
     row.pack(fill="x")
     img = logo(t, 40)
     if img:
@@ -67,9 +65,11 @@ def show(root, title, message, on_open=None, kind="done", seconds=9, sound=False
     color = {"done": T.GREEN, "error": T.RED}.get(kind, T.ORANGE)
     head = tk.Frame(text, bg=T.CARD)
     head.pack(fill="x")
-    tk.Label(head, text="●", bg=T.CARD, fg=color, font=T.F_SMALL).pack(side="left")
-    tk.Label(head, text=title, bg=T.CARD, fg=T.INK, font=T.F_BOLD, anchor="w").pack(side="left", padx=(4, 0))
-    close = tk.Label(head, text="✕", bg=T.CARD, fg=T.SUBTLE, font=T.F_SMALL, cursor="hand2")
+    t.dot = gfx.tk_image(gfx.dot(int(8 * k), color))
+    tk.Label(head, image=t.dot, bg=T.CARD).pack(side="left")
+    tk.Label(head, text=title, bg=T.CARD, fg=T.INK, font=T.F_BOLD, anchor="w").pack(side="left", padx=(6, 0))
+    t.x = gfx.icon("\uE711", int(12 * k), T.MUTED)
+    close = tk.Label(head, image=t.x, bg=T.CARD, cursor="hand2")
     close.pack(side="right")
     tk.Label(text, text=message, bg=T.CARD, fg=T.MUTED, font=T.F_SMALL, anchor="w", justify="left",
              wraplength=width - int(110 * k)).pack(fill="x", pady=(2, 0))
@@ -96,11 +96,12 @@ def show(root, title, message, on_open=None, kind="done", seconds=9, sound=False
     close.bind("<Button-1>", dismiss)
     if on_open:
         link.bind("<Button-1>", open_it)
-        for w in (card.inner, row, text):
+        for w in (card, row, text):
             w.bind("<Button-1>", open_it)
     t.update_idletasks()
     _open.append(t)
     _restack()
+    gfx.window_frame(t)
     t.after(seconds * 1000, lambda: t.winfo_exists() and dismiss())
     if not app_active(root):
         _flash(root)

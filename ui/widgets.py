@@ -1,10 +1,10 @@
-"""Flat widgets: tables, a wrapping detail view, status cards, stage stepper, status pill."""
-import math
+"""Widgets: tables, a wrapping detail view, and smooth rounded cards, buttons and fields (drawn by gfx)."""
 import os
 import tkinter as tk
 from tkinter import font as tkfont
 from tkinter import ttk
 
+from . import gfx
 from . import theme as T
 
 
@@ -30,11 +30,9 @@ class Table(ttk.Frame):
         tv.tag_configure("odd", background=T.ZEBRA)
         ys = ttk.Scrollbar(self, orient=tk.VERTICAL, command=tv.yview)
         xs = ttk.Scrollbar(self, orient=tk.HORIZONTAL, command=tv.xview)
-        tv.configure(yscrollcommand=ys.set, xscrollcommand=xs.set)
+        tv.configure(yscrollcommand=_auto(ys, row=0, column=1, sticky="ns"),
+                     xscrollcommand=_auto(xs, row=1, column=0, sticky="ew"))
         tv.grid(row=0, column=0, sticky="nsew")
-        if len(rows) > height:
-            ys.grid(row=0, column=1, sticky="ns")
-        xs.grid(row=1, column=0, sticky="ew")
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
         tv.bind("<Control-c>", self.copy)
@@ -69,6 +67,17 @@ class Table(ttk.Frame):
         self.tv.heading(col, command=lambda: self._sort(col, not reverse))
 
 
+def _auto(bar, **grid):
+    """A scroll command that shows the scroll bar only when there is something to scroll."""
+    def update(first, last):
+        bar.set(first, last)
+        if float(first) <= 0 and float(last) >= 1:
+            bar.grid_remove()
+        else:
+            bar.grid(**grid)
+    return update
+
+
 def _cell(r, h, i):
     if isinstance(r, dict):
         return r.get(h, "")
@@ -90,7 +99,7 @@ class DetailView(ttk.Frame):
     def __init__(self, parent):
         super().__init__(parent, style="Card.TFrame")
         self.text = tk.Text(self, wrap="word", borderwidth=0, highlightthickness=0, bg=T.CARD, fg=T.INK,
-                            font=T.F_BODY, padx=14, pady=10, cursor="arrow", spacing1=2, spacing3=2)
+                            font=T.F_BODY, padx=6, pady=8, cursor="arrow", spacing1=2, spacing3=2)
         ys = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self.text.yview)
         self.text.configure(yscrollcommand=ys.set)
         self.text.grid(row=0, column=0, sticky="nsew")
@@ -182,7 +191,7 @@ class DetailView(ttk.Frame):
         tbl.configure(width=w)
         tbl.grid_propagate(False)
         rows = min(int(tbl.tv.cget("height")), 12)
-        tbl.configure(height=int((rows + 2.3) * T._px(self, 28)))
+        tbl.configure(height=int((rows + 2.3) * T._px(self, 32)))
 
     def _relayout(self, e):
         # label column: 32% of the width, between 140 and 300 px (small screens give values the room)
@@ -193,44 +202,79 @@ class DetailView(ttk.Frame):
 
 
 # ---------------------------------------------------------------- small pieces
-class Stepper(tk.Frame):
+def _scale(widget):
+    """Windows display scaling (1.0 at 100 %, 1.5 at 150 %): canvas sizes are in pixels and do not follow it."""
+    try:
+        return max(1.0, widget.winfo_fpixels("1i") / 96)
+    except tk.TclError:
+        return 1.0
+
+
+def _bg_of(widget):
+    try:
+        return widget.cget("bg")
+    except tk.TclError:  # ttk widget: its style's background
+        return ttk.Style().lookup(widget.cget("style") or widget.winfo_class(), "background") or T.CANVAS
+
+
+class Stepper(tk.Canvas):
+    """The stages of an order: green tick done, orange ring current, grey ring to come, joined by a line."""
+
     def __init__(self, parent):
-        super().__init__(parent, bg=T.CARD)
+        self.k = _scale(parent)
+        super().__init__(parent, bg=_bg_of(parent), highlightthickness=0, bd=0, width=1, height=int(26 * self.k))
+        self._imgs = []
 
     def set(self, stages):
-        for w in self.winfo_children():
-            w.destroy()
+        self.delete("all")
+        self._imgs = []
+        k, y, x = self.k, int(13 * self.k), 0
+        d = int(18 * k)
         for i, s in enumerate(stages):
-            rag = {"completed": "green", "current": "blue"}.get(s.state, "grey")
-            fg, bg = T.RAG[rag]
-            mark = "✓ " if s.state == "completed" else ("● " if s.state == "current" else "")
-            tk.Label(self, text=f"{mark}{s.name}", bg=bg, fg=fg, padx=10, pady=3,
-                     font=T.F_SMALL_BOLD if s.state == "current" else T.F_SMALL).pack(side="left", padx=(0 if i == 0 else 4, 0))
+            done, current = s.state == "completed", s.state == "current"
+            if done:
+                node = gfx.dot(d, T.GREEN).copy()
+                tick = gfx.icon_image("", int(11 * k), "#FFFFFF")
+                node.alpha_composite(tick, ((d - tick.width) // 2, (d - tick.height) // 2))
+            elif current:
+                node = gfx.dot(d, T.CARD, T.ORANGE, max(2, int(3 * k)))
+                inner = gfx.dot(int(6 * k), T.ORANGE)
+                node = node.copy()
+                node.alpha_composite(inner, ((d - inner.width) // 2, (d - inner.height) // 2))
+            else:
+                node = gfx.dot(d, T.CARD, "#D3D7DD", max(1, int(1.5 * k)))
+            img = gfx.tk_image(node)
+            self._imgs.append(img)
+            self.create_image(x, y, image=img, anchor="w")
+            x += d + int(6 * k)
+            font = T.F_SMALL_BOLD if current else T.F_SMALL
+            self.create_text(x, y, text=s.name, font=font, anchor="w",
+                             fill=T.INK if current or done else T.MUTED)
+            x += tkfont.Font(font=font).measure(s.name) + int(10 * k)
             if i < len(stages) - 1:
-                tk.Label(self, text="›", bg=T.CARD, fg=T.SUBTLE, font=T.F_BODY).pack(side="left", padx=(4, 0))
+                self.create_line(x, y, x + int(22 * k), y, width=max(1, int(1.5 * k)),
+                                 fill=T.GREEN if done else "#D3D7DD")
+                x += int(32 * k)
+        self.configure(width=x)
 
 
 class Segmented(tk.Frame):
-    """Buttons side by side; the selected one is dark (a 2-6 way choice, e.g. tabs of a sub-case)."""
+    """Buttons side by side; the selected one is tinted orange (a 2-6 way choice, e.g. tabs of a sub-case)."""
 
     def __init__(self, parent, options, command, value=None):
-        super().__init__(parent, bg=T.CARD)
+        super().__init__(parent, bg=_bg_of(parent))
         self.command, self.btns = command, {}
         for i, opt in enumerate(options):
-            b = tk.Label(self, text=opt, font=T.F_SMALL_BOLD, padx=14, pady=6, cursor="hand2",
-                         bg=T.FIELD, fg=T.INK, highlightthickness=0)
+            b = RoundButton(self, opt, lambda o=opt: self.select(o), kind="soft", padx=12, height=30, font=T.F_SMALL_BOLD)
             b.grid(row=i // 8, column=i % 8, padx=(0, 4), pady=(0, 4), sticky="w")
-            b.bind("<Button-1>", lambda e, o=opt: self.select(o))
-            b.bind("<Enter>", lambda e, b=b: b.cget("bg") != T.DARK and b.configure(bg=T.BUTTON_HOVER))
-            b.bind("<Leave>", lambda e, b=b: b.cget("bg") != T.DARK and b.configure(bg=T.FIELD))
             self.btns[opt] = b
         if options:
             self.select(value or options[0], fire=False)
 
     def select(self, opt, fire=True):
         for o, b in self.btns.items():
-            on = o == opt
-            b.configure(bg=T.DARK if on else T.FIELD, fg="white" if on else T.INK)
+            b.kind = "tint" if o == opt else "soft"
+            b._draw()
         self.value = opt
         if fire:
             self.command(opt)
@@ -259,68 +303,51 @@ class ThinProgress(tk.Frame):
             self._job = None
 
 
-def _round_points(x1, y1, x2, y2, r, steps=8):
-    """Polygon points of a rounded rectangle with true quarter-circle corners (r = half the height: a pill)."""
-    r = max(0, min(r, (x2 - x1) / 2, (y2 - y1) / 2))
-    pts = []
-    for cx, cy, start in ((x2 - r, y1 + r, -90), (x2 - r, y2 - r, 0), (x1 + r, y2 - r, 90), (x1 + r, y1 + r, 180)):
-        for i in range(steps + 1):
-            a = math.radians(start + 90 * i / steps)
-            pts += [cx + r * math.cos(a), cy + r * math.sin(a)]
-    return pts
-
-
-def _scale(widget):
-    """Windows display scaling (1.0 at 100 %, 1.5 at 150 %): canvas sizes are in pixels and do not follow it."""
-    try:
-        return max(1.0, widget.winfo_fpixels("1i") / 96)
-    except tk.TclError:
-        return 1.0
-
-
-def _bg_of(widget):
-    try:
-        return widget.cget("bg")
-    except tk.TclError:  # ttk widget: its style's background
-        return ttk.Style().lookup(widget.cget("style") or widget.winfo_class(), "background") or T.CANVAS
-
-
 class RoundCard(tk.Canvas):
-    """A rounded card. Put content in .inner (a Frame). fit=True: the card is as tall as its content."""
+    """A rounded card. Put content in .inner (a Frame). fit=True: the card is as tall as its content.
+    shadow: a soft shadow; border: a thin line around it."""
 
-    def __init__(self, parent, fill=T.CARD, radius=18, pad=16, fit=False, shadow=True, **kw):
+    def __init__(self, parent, fill=T.CARD, radius=18, pad=16, fit=False, shadow=True, border=False, **kw):
+        k = _scale(parent)
         super().__init__(parent, bg=_bg_of(parent), highlightthickness=0, bd=0, **kw)
-        self.fill, self.radius, self.pad, self.fit, self.shadow = fill, radius, pad, fit, shadow
+        self.fill, self.radius, self.pad, self.fit = fill, int(radius * k), int(pad * k), fit
+        self.border, self.m = border, int(5 * k) if shadow else 0
         self.inner = tk.Frame(self, bg=fill)
-        self._win = self.create_window(pad, pad, window=self.inner, anchor="nw")
+        self._win = self.create_window(self.pad + self.m, self.pad + self.m, window=self.inner, anchor="nw")
         self.bind("<Configure>", self._redraw)
         if fit:
             self.inner.bind("<Configure>", self._fit, add="+")
 
     def _fit(self, _e=None):
-        h = self.inner.winfo_reqheight() + 2 * self.pad
+        h = self.inner.winfo_reqheight() + 2 * (self.pad + self.m)
         if int(self.cget("height")) != h:
             self.configure(height=h)
 
     def _redraw(self, _e=None):
         w, h = self.winfo_width(), self.winfo_height()
-        if w < 4 or h < 4:
+        if w < 8 or h < 8:
             return
         self.delete("shape")
-        if self.shadow:  # a 1 px soft edge under the card
-            self.create_polygon(_round_points(0, 1, w - 1, h - 1, self.radius), fill=T.SHADOW,
-                                outline="", tags="shape")
-        self.create_polygon(_round_points(0, 0, w - 1, h - 2 if self.shadow else h - 1, self.radius),
-                            fill=self.fill, outline="", tags=("shape", "body"))
+        r = min(self.radius, (min(w, h) - 2 * self.m) // 2)
+        if self.m or self.border:
+            self._img = gfx.photo(w, h, r, self.fill, T.BORDER if self.border else None, shadow=self.m)
+            self.create_image(0, 0, image=self._img, anchor="nw", tags="shape")
+        else:  # large cards stay fast: four corner images and two rectangles
+            self._img = gfx.corners(r, self.fill)
+            for img, x, y, a in zip(self._img, (0, w, 0, w), (0, 0, h, h), ("nw", "ne", "sw", "se")):
+                self.create_image(x, y, image=img, anchor=a, tags="shape")
+            self.create_rectangle(r, 0, w - r, h, fill=self.fill, outline="", tags="shape")
+            self.create_rectangle(0, r, w, h - r, fill=self.fill, outline="", tags="shape")
         self.tag_lower("shape")
-        self.itemconfigure(self._win, width=max(1, w - 2 * self.pad))
+        edge = self.pad + self.m
+        self.itemconfigure(self._win, width=max(1, w - 2 * edge))
         if not self.fit:
-            self.itemconfigure(self._win, height=max(1, h - 2 * self.pad - (1 if self.shadow else 0)))
+            self.itemconfigure(self._win, height=max(1, h - 2 * edge))
 
     def recolor(self, fill):
         """New card colour (the inner frame and its direct plain children follow)."""
         old, self.fill = self.fill, fill
-        self.itemconfigure("body", fill=fill)
+        self._redraw()
         self.inner.configure(bg=fill)
         for w in self.inner.winfo_children():
             with _suppress_tcl():
@@ -337,9 +364,9 @@ class _suppress_tcl:
 
 
 class NavItem(tk.Canvas):
-    """A sidebar entry: icon + label on a rounded highlight (orange tint when selected)."""
+    """A menu entry on the dark shell: icon + label; the selected one is lighter, with a small orange bar."""
 
-    def __init__(self, parent, icon, text, command, width=170, height=40, badge=False):
+    def __init__(self, parent, icon, text, command, width=180, height=40, badge=False):
         self.k = _scale(parent)
         super().__init__(parent, bg=_bg_of(parent), highlightthickness=0, bd=0, width=int(width * self.k),
                          height=int(height * self.k), cursor="hand2")
@@ -365,28 +392,35 @@ class NavItem(tk.Canvas):
 
     def _draw(self):
         self.delete("all")
-        w, h = self.winfo_width(), self.winfo_height()
-        if w < 4:
+        w, h, k = self.winfo_width(), self.winfo_height(), self.k
+        if w < 8:
             return
+        self._imgs = []
         if self.selected or self.hover:
-            self.create_polygon(_round_points(0, 0, w - 1, h - 1, h // 2), outline="",
-                                fill=T.ORANGE_TINT if self.selected else T.NAV_HOVER)
-        fg = T.ORANGE if self.selected else (T.INK if self.hover else "#4B5563")
-        self.create_text(int(14 * self.k), h // 2, text=self.icon, font=T.F_ICON, fill=fg, anchor="w")
-        self.create_text(int(44 * self.k), h // 2, text=self.text, font=T.F_BOLD if self.selected else T.F_BODY,
+            self._imgs.append(gfx.photo(w, h, int(9 * k), T.SHELL_ACTIVE if self.selected else T.SHELL_HOVER))
+            self.create_image(0, 0, image=self._imgs[-1], anchor="nw")
+        if self.selected:
+            t = max(3, int(3 * k))
+            self._imgs.append(gfx.photo(t, int(18 * k), t // 2 + 1, T.ORANGE))
+            self.create_image(int(2 * k), h // 2, image=self._imgs[-1], anchor="w")
+        fg = "#FFFFFF" if self.selected or self.hover else "#C2C7D0"
+        self._imgs.append(gfx.icon(self.icon, int(18 * k), T.ORANGE if self.selected else fg))
+        self.create_image(int(14 * k), h // 2, image=self._imgs[-1], anchor="w")
+        self.create_text(int(44 * k), h // 2, text=self.text, font=T.F_BOLD if self.selected else T.F_BODY,
                          fill=fg, anchor="w")
         if self.badge:  # small orange dot: something new (an update)
-            self.create_oval(w - 22, h // 2 - 4, w - 14, h // 2 + 4, fill=T.ORANGE, outline="")
+            self._imgs.append(gfx.tk_image(gfx.dot(int(8 * k), T.ORANGE), ("dot", int(8 * k), T.ORANGE)))
+            self.create_image(w - int(14 * k), h // 2, image=self._imgs[-1], anchor="e")
 
 
 class Pill(tk.Canvas):
-    """Status pill: coloured dot + short text on a rounded grey background."""
+    """Status pill on the dark shell: coloured dot + short text."""
 
     def __init__(self, parent, width=170, height=34):
-        k = _scale(parent)
-        super().__init__(parent, bg=_bg_of(parent), highlightthickness=0, bd=0, width=int(width * k),
-                         height=int(height * k))
-        self.text, self.color = "Starting...", T.SUBTLE
+        self.k = _scale(parent)
+        super().__init__(parent, bg=_bg_of(parent), highlightthickness=0, bd=0, width=int(width * self.k),
+                         height=int(height * self.k))
+        self.text, self.color = "Starting...", T.SHELL_MUTED
         self.bind("<Configure>", lambda e: self._draw())
 
     def set(self, text, color):
@@ -395,31 +429,33 @@ class Pill(tk.Canvas):
 
     def _draw(self):
         self.delete("all")
-        w, h = self.winfo_width(), self.winfo_height()
-        if w < 4:
+        w, h, k = self.winfo_width(), self.winfo_height(), self.k
+        if w < 8:
             return
-        self.create_polygon(_round_points(0, 0, w - 1, h - 1, h // 2), fill=T.NAV_HOVER, outline="")
-        self.create_oval(14, h // 2 - 4, 22, h // 2 + 4, fill=self.color, outline="")
+        d = int(8 * k)
+        self._imgs = [gfx.photo(w, h, h // 2, T.SHELL_HOVER), gfx.tk_image(gfx.dot(d, self.color), ("dot", d, self.color))]
+        self.create_image(0, 0, image=self._imgs[0], anchor="nw")
+        self.create_image(int(13 * k), h // 2, image=self._imgs[1], anchor="w")
         text = self.text
         f = tkfont.Font(font=T.F_SMALL)
-        while text and f.measure(text) > w - 44:
+        while text and f.measure(text) > w - int(44 * k):
             text = text[:-2]
         if text != self.text:
             text = text.rstrip() + "…"
-        self.create_text(32, h // 2, text=text, font=T.F_SMALL, fill=T.INK, anchor="w")
+        self.create_text(int(29 * k), h // 2, text=text, font=T.F_SMALL, fill=T.SHELL_TEXT, anchor="w")
 
 
 # key-figure card colours: variant -> (card, caption, value)
-_KPI = {"plain": (T.STATUS_CARD, T.MUTED, T.INK), "dark": (T.DARK, "#AEBDBD", "white"),
-        "accent": (T.ORANGE, "#FFE3CC", "white")}
+_KPI = {"plain": (T.CARD, T.MUTED, T.INK), "dark": (T.DARK, "#AEB4BF", "white"),
+        "accent": (T.ORANGE, "#FFF0E3", "white")}
 
 
 class StatusCard(RoundCard):
-    """A key figure: small caption, big value. variant: plain (soft grey), dark (slate) or accent (orange)."""
+    """A key figure: small caption, big value. variant: plain (white), dark or accent (orange)."""
 
     def __init__(self, parent, caption, value="—", variant="plain"):
         card, cap, val = _KPI[variant]
-        super().__init__(parent, fill=card, radius=20, pad=14, fit=True, shadow=variant == "plain")
+        super().__init__(parent, fill=card, radius=14, pad=11, fit=True, border=variant == "plain")
         self.variant = variant
         self.cap = tk.Label(self.inner, text=caption, bg=card, fg=cap, font=T.F_SMALL, anchor="w")
         self.cap.pack(fill="x")
@@ -440,8 +476,8 @@ class StatusCard(RoundCard):
 
     def _fitfont(self):
         """Largest font that fits the card; a long value ("Resolved-Completed") goes on two lines rather than
-        being cut."""
-        room = self.winfo_width() - 2 * self.pad - 8
+        being cut. Never taller than a one-line 20 pt value, so that the cards of a row stay the same height."""
+        room = self.winfo_width() - 2 * (self.pad + self.m) - 8
         if room <= 0:
             return
         text = getattr(self, "value", self.val.cget("text"))
@@ -449,13 +485,13 @@ class StatusCard(RoundCard):
         options = [(text, s) for s in (20, 17, 15, 13, 12)]
         if cut > 0:  # two lines, split after the hyphen / at the space
             two = text[:cut + 1].rstrip() + "\n" + text[cut + 1:].lstrip()
-            options += [(two, s) for s in (13, 12, 11, 10)]
+            options += [(two, s) for s in (11, 10)]
         options += [(text, s) for s in (11, 10, 9)]
         for shown, size in options:
-            f = tkfont.Font(family=T.FONT, size=size, weight="bold")
+            f = tkfont.Font(family=T.FONT_HEAD, size=size)
             if max(f.measure(line) for line in shown.split("\n")) <= room:
                 break
-        self.val.configure(text=shown, font=(T.FONT, size, "bold"), justify="left")
+        self.val.configure(text=shown, font=(T.FONT_HEAD, size), justify="left")
 
 
 class Tooltip:
@@ -473,10 +509,11 @@ class Tooltip:
         self.tip = tk.Toplevel(w)
         self.tip.wm_overrideredirect(True)
         self.tip.attributes("-topmost", True)
-        tk.Label(self.tip, text=self.text, bg=T.DARK, fg="white", font=T.F_SMALL, padx=8, pady=4).pack()
+        tk.Label(self.tip, text=self.text, bg=T.DARK, fg="white", font=T.F_SMALL, padx=10, pady=5).pack()
         self.tip.update_idletasks()
         x = w.winfo_rootx() + w.winfo_width() // 2 - self.tip.winfo_reqwidth() // 2
         self.tip.geometry(f"+{x}+{w.winfo_rooty() + w.winfo_height() + 6}")
+        gfx.window_frame(self.tip)
 
     def hide(self, _e=None):
         if self.tip:
@@ -484,42 +521,53 @@ class Tooltip:
             self.tip = None
 
 
-class IconButton(tk.Label):
-    """A square icon button (Segoe MDL2 glyph) with a tooltip; configure(state="disabled") greys it out."""
+class IconButton(tk.Canvas):
+    """A square icon button with a tooltip; configure(state="disabled") greys it out."""
 
-    def __init__(self, parent, icon, tip, command, size=None):
-        k = _scale(parent)
-        super().__init__(parent, text=icon, font=(T.ICONS, 13), bg=T.FIELD, fg=T.INK, cursor="hand2",
-                         width=3, pady=int(6 * k / 1.5) + 4)
-        self._command, self._state = command, "normal"
+    def __init__(self, parent, icon, tip, command, size=36):
+        self.k = _scale(parent)
+        self.icon, self._command, self._state, self.hover = icon, command, "normal", False
+        side = int(size * self.k)
+        super().__init__(parent, bg=_bg_of(parent), highlightthickness=0, bd=0, width=side, height=side, cursor="hand2")
+        self.bind("<Configure>", lambda e: self._draw())
+        self.bind("<Enter>", lambda e: self._over(True), add="+")
+        self.bind("<Leave>", lambda e: self._over(False), add="+")
         self.bind("<Button-1>", lambda e: self._state == "normal" and self._command())
-        self.bind("<Enter>", lambda e: self._state == "normal" and tk.Label.configure(self, bg=T.BUTTON_HOVER), add="+")
-        self.bind("<Leave>", lambda e: tk.Label.configure(self, bg=T.FIELD), add="+")
         Tooltip(self, tip)
+
+    def _over(self, on):
+        self.hover = on
+        self._draw()
 
     def configure(self, cnf=None, **kw):
         if "state" in kw:
             self._state = kw.pop("state")
-            kw["fg"] = T.INK if self._state == "normal" else "#B8BDC4"
-            kw["cursor"] = "hand2" if self._state == "normal" else ""
-        return tk.Label.configure(self, cnf, **kw)
+            tk.Canvas.configure(self, cursor="hand2" if self._state == "normal" else "")
+            self._draw()
+        return tk.Canvas.configure(self, cnf, **kw) if cnf or kw else None
 
     config = configure
 
-
-def _mix(c1, c2, t):
-    a = [int(c1[i:i + 2], 16) for i in (1, 3, 5)]
-    b = [int(c2[i:i + 2], 16) for i in (1, 3, 5)]
-    return "#%02x%02x%02x" % tuple(int(x + (y - x) * t) for x, y in zip(a, b))
+    def _draw(self):
+        self.delete("all")
+        w, h, k = self.winfo_width(), self.winfo_height(), self.k
+        if w < 8:
+            return
+        on = self._state == "normal"
+        fill = T.BUTTON_HOVER if self.hover and on else T.BUTTON
+        self._imgs = [gfx.photo(w, h, int(9 * k), fill, T.BUTTON_BORDER if on else T.LINE),
+                      gfx.icon(self.icon, int(17 * k), T.INK if on else "#B4B9C2")]
+        self.create_image(0, 0, image=self._imgs[0], anchor="nw")
+        self.create_image(w // 2, h // 2, image=self._imgs[1])
 
 
 class GradientTile(tk.Canvas):
-    """A dashboard key figure on a rounded gradient tile: caption, big value, small note."""
+    """A dashboard key figure on a rounded gradient tile: caption, big value, small note, and an icon."""
 
-    def __init__(self, parent, caption, colors, value="—", note="", height=88):
+    def __init__(self, parent, caption, colors, value="—", note="", height=108, icon=""):
         k = _scale(parent)
         super().__init__(parent, bg=_bg_of(parent), highlightthickness=0, bd=0, height=int(height * k))
-        self.k, self.caption, self.colors, self.value, self.note = k, caption, colors, value, note
+        self.k, self.caption, self.colors, self.value, self.note, self.icon = k, caption, colors, value, note, icon
         self.bind("<Configure>", lambda e: self._draw())
 
     def set(self, value, note=""):
@@ -528,21 +576,25 @@ class GradientTile(tk.Canvas):
 
     def _draw(self):
         self.delete("all")
-        w, h = self.winfo_width(), self.winfo_height()
-        if w < 10:
+        w, h, k = self.winfo_width(), self.winfo_height(), self.k
+        if w < 20:
             return
-        r = int(16 * self.k)
-        for x in range(w):  # one vertical line per pixel, clipped to the rounded rectangle
-            dx = r - x if x < r else (x - (w - 1 - r) if x > w - 1 - r else 0)
-            inset = r - (r * r - dx * dx) ** 0.5 if dx > 0 else 0
-            self.create_line(x, inset, x, h - inset, fill=_mix(self.colors[0], self.colors[1], x / max(1, w - 1)))
-        pad = int(16 * self.k)
-        self.create_text(pad, pad, text=self.caption, fill="white", font=T.F_SMALL, anchor="nw")
-        self.create_text(pad, h - pad - (int(16 * self.k) if self.note else 0), text=self.value, fill="white",
-                         font=(T.FONT, 20, "bold"), anchor="sw")
+        pad = int(14 * k)
+        self._imgs = [gfx.tk_image(gfx.gradient(w, h, int(14 * k), *self.colors), ("g", w, h, self.colors))]
+        self.create_image(0, 0, image=self._imgs[0], anchor="nw")
+        room = w - 2 * pad
+        side = int(18 * k)
+        if self.icon and tkfont.Font(font=T.F_SMALL_BOLD).measure(self.caption) + side + int(6 * k) <= room:
+            self._imgs.append(gfx.icon(self.icon, side, "#FFFFFF"))
+            self.create_image(w - pad, pad, image=self._imgs[-1], anchor="ne")
+        self.create_text(pad, pad, text=self.caption, fill="#FFFFFF", font=T.F_SMALL_BOLD, anchor="nw")
+        for size in (22, 18, 15, 12):
+            f = tkfont.Font(family=T.FONT_HEAD, size=size)
+            if f.measure(self.value) <= room:
+                break
+        self.create_text(pad, h // 2 + int(4 * k), text=self.value, fill="#FFFFFF", font=(T.FONT_HEAD, size), anchor="w")
         if self.note:
-            self.create_text(pad, h - pad + int(2 * self.k), text=self.note, fill="#F1F5FF", font=T.F_SMALL,
-                             anchor="sw")
+            self.create_text(pad, h - int(11 * k), text=self.note, fill="#F4F7FF", font=T.F_SMALL, anchor="sw")
 
 
 class BarChart(tk.Canvas):
@@ -560,6 +612,7 @@ class BarChart(tk.Canvas):
 
     def _draw(self):
         self.delete("all")
+        self._imgs = []
         w, h = self.winfo_width(), self.winfo_height()
         if w < 20:
             return
@@ -567,58 +620,77 @@ class BarChart(tk.Canvas):
         if not self.data:
             self.create_text(w // 2, h // 2, text="No data yet: open an order", fill=T.SUBTLE, font=T.F_SMALL)
             return
-        top, bottom, left = int(18 * k), int(34 * k), int(30 * k)
+        top, bottom, left = int(18 * k), int(26 * k), int(26 * k)
         peak = max(v for _, v, _ in self.data) or 1
         step = max(1, -(-peak // 4))
         scale = max(peak, step * 4)
         for i in range(5):  # grid lines with their value
-            y = h - bottom - (h - bottom - top) * (i * step) / scale
+            y = int(h - bottom - (h - bottom - top) * (i * step) / scale)
             self.create_line(left, y, w, y, fill=T.LINE)
             self.create_text(left - 6, y, text=str(i * step), fill=T.SUBTLE, font=(T.FONT, 8), anchor="e")
         slot = (w - left) / len(self.data)
-        bar = min(slot * 0.55, 56 * k)
+        bar = int(min(slot * 0.5, 44 * k))
         f = tkfont.Font(font=(T.FONT, 8))
         base = h - bottom
         for i, (label, value, color) in enumerate(self.data):
-            x = left + slot * i + (slot - bar) / 2
-            y = base - (base - top) * value / scale
-            if value:
-                rr = min(bar / 2, 8 * k, (base - y))
-                self.create_polygon(_round_points(x, y, x + bar, base + rr, rr), fill=color, outline="")
-                self.create_rectangle(x - 1, base, x + bar + 1, base + rr + 2, fill=_bg_of(self), outline="")
-            self.create_text(x + bar / 2, y - 4, text=str(value), fill=T.INK, font=T.F_SMALL_BOLD, anchor="s")
+            x = int(left + slot * i + (slot - bar) / 2)
+            y = int(base - (base - top) * value / scale)
+            if value and base - y >= 1:
+                self._imgs.append(gfx.tk_image(gfx.bar(bar, base - y, min(bar // 2, int(6 * k), base - y), color),
+                                               ("b", bar, base - y, color)))
+                self.create_image(x, y, image=self._imgs[-1], anchor="nw")
+            self.create_text(x + bar // 2, y - 3, text=str(value), fill=T.INK, font=T.F_SMALL_BOLD, anchor="s")
             text = label
             while text and f.measure(text) > slot - 6:
                 text = text[:-2]
             if text != label:
                 text = text.rstrip() + "…"
-            self.create_text(x + bar / 2, base + 8, text=text, fill=T.MUTED, font=(T.FONT, 8), anchor="n")
+            self.create_text(x + bar // 2, base + int(6 * k), text=text, fill=T.MUTED, font=(T.FONT, 8), anchor="n")
+
+
+AI_A, AI_B, AI_TINT = "#7C5CFF", "#1FB6E8", "#F1EEFF"  # the bot's violet and cyan (see bot_kit)
 
 
 class RoundButton(tk.Canvas):
-    """A pill-shaped button. kind: accent (orange), dark, soft. configure(state=..., text=...) like a ttk button."""
+    """A rounded button. kind: accent (orange), dark, soft, tint, ai (the bot's gradient), ai_soft. icon: a glyph
+    before the text.
+    configure(state=..., text=...) like a ttk button."""
 
-    _COLORS = {"accent": (T.ORANGE, T.ORANGE_DARK, "white"), "dark": (T.DARK, T.DARK_SOFT, "white"),
-               "soft": (T.FIELD, T.BUTTON_HOVER, T.INK)}
+    # kind -> (colour, hover colour, text colour, outline)
+    _COLORS = {"accent": (T.ORANGE, T.ORANGE_DARK, "white", None), "dark": (T.DARK, T.DARK_SOFT, "white", None),
+               "soft": (T.BUTTON, T.BUTTON_HOVER, T.INK, T.BUTTON_BORDER),
+               "tint": (T.ORANGE_TINT, T.ORANGE_SOFT, T.ORANGE_DARK, None),
+               "ai": (AI_A, AI_B, "white", None), "ai_soft": (AI_TINT, gfx.mix(AI_A, "#FFFFFF", 0.8), AI_A, None)}
 
-    def __init__(self, parent, text, command, kind="accent", padx=20, height=36, font=None):
+    def __init__(self, parent, text, command, kind="accent", padx=18, height=36, font=None, icon=""):
         self.k = _scale(parent)
-        self.text, self.command, self.kind, self.padx = text, command, kind, padx
+        self.text, self.command, self.kind, self.padx, self.icon = text, command, kind, padx, icon
         self.font = font or T.F_BOLD
-        self.state, self.hover = "normal", False
+        self.state, self.hover, self.down = "normal", False, False
         super().__init__(parent, bg=_bg_of(parent), highlightthickness=0, bd=0, height=int(height * self.k),
                          width=self._width(), cursor="hand2")
         self.bind("<Configure>", lambda e: self._draw())
         self.bind("<Enter>", lambda e: self._hover(True))
         self.bind("<Leave>", lambda e: self._hover(False))
-        self.bind("<Button-1>", lambda e: self.state == "normal" and self.command())
+        self.bind("<ButtonPress-1>", lambda e: self._press(True))
+        self.bind("<ButtonRelease-1>", self._release)
 
     def _width(self):
-        return int(tkfont.Font(font=self.font).measure(self.text) + 2 * self.padx * self.k)
+        extra = int(24 * self.k) if self.icon else 0
+        return int(tkfont.Font(font=self.font).measure(self.text) + 2 * self.padx * self.k) + extra
 
     def _hover(self, on):
         self.hover = on
         self._draw()
+
+    def _press(self, on):
+        self.down = on
+        self._draw()
+
+    def _release(self, e):
+        self._press(False)
+        if self.state == "normal" and 0 <= e.x < self.winfo_width() and 0 <= e.y < self.winfo_height():
+            self.command()
 
     def configure(self, cnf=None, **kw):
         changed = False
@@ -646,34 +718,65 @@ class RoundButton(tk.Canvas):
 
     def _draw(self):
         self.delete("all")
-        w, h = self.winfo_width(), self.winfo_height()
-        if w < 4:
+        w, h, k = self.winfo_width(), self.winfo_height(), self.k
+        if w < 8:
             return
-        base, hover, fg = self._COLORS[self.kind]
+        base, hover, fg, line = self._COLORS[self.kind]
         fill = hover if self.hover and self.state == "normal" else base
         if self.state != "normal":
-            fill, fg = ("#F7C49A", "white") if self.kind == "accent" else (T.FIELD, "#A0A4AB")
-        self.create_polygon(_round_points(0, 0, w - 1, h - 1, h // 2), fill=fill, outline="")
-        self.create_text(w // 2, h // 2, text=self.text, fill=fg, font=self.font)
+            fill, fg, line = ("#F9CBA3", "white", None) if self.kind == "accent" else (T.FIELD, "#A0A6B0", T.LINE)
+        elif self.down:
+            fill = gfx.mix(fill, "#000000", 0.08)
+        if self.kind == "ai" and self.state == "normal":
+            pair = (hover, base) if self.hover else (base, hover)
+            self._imgs = [gfx.tk_image(gfx.gradient(w, h, int(10 * k), *pair), ("g", w, h, pair))]
+        else:
+            self._imgs = [gfx.photo(w, h, int(10 * k), fill, line)]
+        self.create_image(0, 0, image=self._imgs[0], anchor="nw")
+        cx = w // 2
+        if self.icon:
+            self._imgs.append(gfx.icon(self.icon, int(16 * k), fg))
+            tw = tkfont.Font(font=self.font).measure(self.text)
+            cx += int(11 * k)
+            self.create_image(cx - tw // 2 - int(8 * k), h // 2, image=self._imgs[-1], anchor="e")
+        self.create_text(cx, h // 2, text=self.text, fill=fg, font=self.font)
         tk.Canvas.configure(self, cursor="hand2" if self.state == "normal" else "")
 
 
 class RoundEntry(tk.Canvas):
-    """A text field with rounded ends (grey; orange outline when focused). .entry is the tk.Entry inside;
-    get / insert / delete / bind / focus_set go to it, so it replaces a ttk.Entry."""
+    """A rounded text field (orange outline when focused), with a grey hint while empty and an optional icon.
+    .entry is the tk.Entry inside; get / insert / delete / bind / focus_set go to it, so it replaces a ttk.Entry."""
 
-    def __init__(self, parent, textvariable=None, width=200, height=38, font=None, show=""):
-        k = _scale(parent)
+    def __init__(self, parent, textvariable=None, width=200, height=38, font=None, show="", placeholder="", icon=""):
+        self.k = k = _scale(parent)
         super().__init__(parent, bg=_bg_of(parent), highlightthickness=0, bd=0, width=int(width * k),
                          height=int(height * k))
-        self.focused = False
-        self.entry = tk.Entry(self, textvariable=textvariable, bd=0, relief="flat", bg=T.FIELD, fg=T.INK,
-                              font=font or (T.FONT, 11), insertbackground=T.INK, highlightthickness=0, show=show)
+        self.focused, self.icon = False, icon
+        font = font or (T.FONT, 10)
+        self.entry = tk.Entry(self, textvariable=textvariable, bd=0, relief="flat", bg=T.FIELD, fg=T.INK, font=font,
+                              insertbackground=T.INK, highlightthickness=0, show=show, selectbackground=T.ORANGE_SOFT,
+                              selectforeground=T.INK)
         self._win = self.create_window(0, 0, window=self.entry, anchor="w")
+        self.hint = None
+        if placeholder:
+            self.hint = tk.Label(self.entry, text=placeholder, bg=T.FIELD, fg=T.SUBTLE, font=font, bd=0, padx=0, pady=0,
+                                 cursor="xterm")
+            self.hint.bind("<Button-1>", lambda e: self.entry.focus_set())
+            self.entry.bind("<KeyRelease>", lambda e: self._show_hint(), add="+")
+            if textvariable is not None:
+                textvariable.trace_add("write", lambda *_a: self._show_hint())
         self.entry.bind("<FocusIn>", lambda e: self._focus(True), add="+")
         self.entry.bind("<FocusOut>", lambda e: self._focus(False), add="+")
         tk.Canvas.bind(self, "<Configure>", lambda e: self._draw())
         tk.Canvas.bind(self, "<Button-1>", lambda e: self.entry.focus_set())
+
+    def _show_hint(self):
+        if self.hint is None:
+            return
+        if self.entry.get() or self.focused:
+            self.hint.place_forget()
+        else:
+            self.hint.place(x=1, rely=0.5, anchor="w")
 
     def _focus(self, on):
         self.focused = on
@@ -681,30 +784,37 @@ class RoundEntry(tk.Canvas):
 
     def _draw(self):
         tk.Canvas.delete(self, "shape")
-        w, h = self.winfo_width(), self.winfo_height()
-        if w < 4:
+        w, h, k = self.winfo_width(), self.winfo_height(), self.k
+        if w < 8:
             return
-        r = h // 2
-        if self.focused:
-            self.create_polygon(_round_points(0, 0, w - 1, h - 1, r), fill=T.ORANGE, outline="",
-                                tags="shape")
-            self.create_polygon(_round_points(2, 2, w - 3, h - 3, r - 2), fill=T.FIELD, outline="",
-                                tags="shape")
-        else:
-            self.create_polygon(_round_points(0, 0, w - 1, h - 1, r), fill=T.FIELD, outline="",
-                                tags="shape")
+        r = int(9 * k)
+        fill = T.CARD if self.focused else T.FIELD
+        self._imgs = [gfx.photo(w, h, r, fill, T.ORANGE if self.focused else T.BORDER,
+                                line=max(1, int(1.5 * k)) if self.focused else 1)]
+        self.create_image(0, 0, image=self._imgs[0], anchor="nw", tags="shape")
+        left = int(12 * k)
+        if self.icon:
+            self._imgs.append(gfx.icon(self.icon, int(15 * k), T.MUTED))
+            self.create_image(left, h // 2, image=self._imgs[-1], anchor="w", tags="shape")
+            left += int(23 * k)
         self.tag_lower("shape")
-        self.coords(self._win, max(12, r * 0.7), h // 2)
-        self.itemconfigure(self._win, width=max(10, w - 2 * max(12, r * 0.7)))
+        self.entry.configure(bg=fill)
+        if self.hint is not None:
+            self.hint.configure(bg=fill)
+        self.coords(self._win, left, h // 2)
+        self.itemconfigure(self._win, width=max(10, w - left - int(12 * k)))
+        self._show_hint()
 
     def get(self):
         return self.entry.get()
 
     def delete(self, *args):
-        return self.entry.delete(*args)
+        self.entry.delete(*args)
+        self._show_hint()
 
     def insert(self, *args):
-        return self.entry.insert(*args)
+        self.entry.insert(*args)
+        self._show_hint()
 
     def bind(self, seq=None, func=None, add=None):
         return self.entry.bind(seq, func, add)

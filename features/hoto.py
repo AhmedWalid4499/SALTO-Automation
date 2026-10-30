@@ -13,7 +13,7 @@ from .base import Feature
 
 class HotoPrep(Feature):
     title = "HOTO preparation"
-    icon = "\uE9D5"
+    icon = "\uE9D5"  # checklist
     subtitle = "The HOTO sheet of a LAN order, filled from SALTO and FLIP"
 
     def build(self, parent):
@@ -34,6 +34,7 @@ class HotoPrep(Feature):
         self.info = tk.Label(parent, text="", bg=T.CARD, fg=T.INK, font=T.F_BODY, anchor="w", justify="left",
                              wraplength=1100)
         self.info.pack(fill="x")
+        self.info.bind("<Configure>", lambda e: self.info.configure(wraplength=max(200, e.width - 10)))
         self.body = tk.Frame(parent, bg=T.CARD)
         self.body.pack(fill="both", expand=True, pady=(8, 0))
         self.table = None

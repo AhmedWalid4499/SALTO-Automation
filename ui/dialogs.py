@@ -7,11 +7,11 @@ showinfo / showwarning / showerror / askyesno keep tkinter.messagebox's signatur
 import os
 import sys
 import tkinter as tk
-from tkinter import ttk
 
 from salto.version import APP_NAME
 
 from . import theme as T
+from . import gfx
 from .widgets import RoundButton, RoundCard, _scale
 
 _ASSETS = os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -62,7 +62,7 @@ def shell(parent, title, subtitle="", width=560, height=None, modal=True, resiza
                  wraplength=int((width - 120) * k)).pack(fill="x")
     foot = tk.Frame(w, bg=T.CANVAS)
     foot.pack(side="bottom", fill="x", padx=20, pady=(4, 16))
-    card = RoundCard(w, radius=24, pad=18, fit=not height)  # fit: as tall as its content
+    card = RoundCard(w, radius=14, pad=16, fit=not height, border=True)  # fit: as tall as its content
     card.pack(fill="both", expand=True, padx=20, pady=(0, 8))
     w.update_idletasks()
     ww, hh = int(width * k), int(height * k) if height else None
@@ -77,6 +77,7 @@ def shell(parent, title, subtitle="", width=560, height=None, modal=True, resiza
         w.after_idle(lambda: (w.geometry(""), w.after(30, lambda: _keep_on_screen(w))))
     if modal:
         w.after_idle(lambda: _grab(w))
+    w.after_idle(lambda: gfx.window_frame(w, T.CANVAS, T.INK))
     return w, card.inner, foot
 
 
@@ -113,8 +114,9 @@ def _message(kind, title, message, parent=None, buttons=(("OK", True),), default
     k = _scale(w)
     size = int(34 * k)
     badge = tk.Canvas(row, width=size, height=size, bg=T.CARD, highlightthickness=0)
-    badge.create_oval(1, 1, size - 1, size - 1, fill=color, outline="")
-    badge.create_text(size // 2, size // 2, text=mark, fill="white", font=(T.FONT, 13, "bold"))
+    badge.image = gfx.tk_image(gfx.dot(size, color))
+    badge.create_image(0, 0, image=badge.image, anchor="nw")
+    badge.create_text(size // 2, size // 2, text=mark, fill="white", font=(T.FONT_SEMI, 13))
     badge.pack(side="left", anchor="n", padx=(0, 14))
     tk.Label(row, text=str(message), bg=T.CARD, fg=T.INK, font=T.F_BODY, justify="left", anchor="w",
              wraplength=int(360 * k)).pack(side="left", fill="x", expand=True, anchor="n")

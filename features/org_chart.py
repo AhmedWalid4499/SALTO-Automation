@@ -20,7 +20,7 @@ def _row(p):
 
 class OrgChartFinder(Feature):
     title = "Org Chart"
-    icon = "\uEBDA"
+    icon = "\uE716"  # people
     subtitle = "Emails, jobs and managers from the Orange Business Org Chart"
 
     def build(self, parent):
@@ -30,21 +30,20 @@ class OrgChartFinder(Feature):
         bar = ttk.Frame(parent, style="Card.TFrame")
         bar.pack(fill="x")
         self.vars = {}
-        for label, width in (("Last name", 12), ("First name", 10), ("Email", 18)):
-            ttk.Label(bar, text=label, font=T.F_BOLD).pack(side="left", padx=(0 if not self.vars else 12, 6))
+        for label, width in (("Last name", 170), ("First name", 170), ("Email", 240)):
             v = tk.StringVar()
-            e = RoundEntry(bar, textvariable=v, width=width * 12)
-            e.pack(side="left")
+            e = RoundEntry(bar, textvariable=v, width=width, placeholder=label)
+            e.pack(side="left", padx=(0, 8))
             e.bind("<Return>", lambda _e: self.search())
             self.vars[label] = v
-        self.btn = RoundButton(bar, "Search", self.search)
-        self.btn.pack(side="left", padx=12)
+        self.btn = RoundButton(bar, "Search", self.search, icon="\uE721")
+        self.btn.pack(side="left")
         self.info = tk.Label(parent, text="", bg=T.CARD, fg=T.MUTED, font=T.F_SMALL, anchor="w")
         self.info.pack(fill="x", pady=(10, 4))
         self.top = tk.Frame(parent, bg=T.CARD)
         self.top.pack(fill="x")
-        tk.Label(parent, text="Management chain of the selected person", bg=T.CARD, fg=T.ORANGE,
-                 font=T.F_SECTION, anchor="w").pack(fill="x", pady=(12, 4))
+        self.chain_head = tk.Label(parent, text="Management chain of the selected person", bg=T.CARD, fg=T.INK,
+                                   font=T.F_SECTION, anchor="w")
         self.low = tk.Frame(parent, bg=T.CARD)
         self.low.pack(fill="both", expand=True)
 
@@ -71,6 +70,7 @@ class OrgChartFinder(Feature):
         self.people = people
         for w in list(self.top.winfo_children()) + list(self.low.winfo_children()):
             w.destroy()
+        self.chain_head.pack_forget()
         if not people:
             self.info.configure(text="Nobody found. Customer contacts are not in the Org Chart.", fg=T.MUTED)
             return
@@ -81,6 +81,7 @@ class OrgChartFinder(Feature):
         # row id -> person, taken before any sorting (a sort moves rows, it keeps their ids)
         self._by_row = dict(zip(t.tv.get_children(), people))
         t.tv.bind("<<TreeviewSelect>>", lambda e: self._chain(t))
+        self.chain_head.pack(fill="x", pady=(12, 4), before=self.low)
         t.tv.selection_set(t.tv.get_children()[0])
 
     def _chain(self, t):

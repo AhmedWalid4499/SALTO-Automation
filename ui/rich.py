@@ -119,8 +119,8 @@ def _table(text, block):
         data.append({h: (c[k] if k < len(c) else "") for k, h in enumerate(head)})
     shown = min(len(data), 12) or 1
     row_h = int(ttk.Style().lookup("Treeview", "rowheight") or 28)
-    box = tk.Frame(text, bg=T.CARD, highlightthickness=1, highlightbackground=T.LINE,
-                   height=row_h * (shown + 1) + 22, width=_width(text))
+    box = tk.Frame(text, bg=T.CARD, highlightthickness=1, highlightbackground=T.BORDER,
+                   height=row_h * (shown + 1) + 8, width=_width(text))
     box.pack_propagate(False)
     Table(box, head, data, height=shown).pack(fill="both", expand=True)
     box._md_table = True

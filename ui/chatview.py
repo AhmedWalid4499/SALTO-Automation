@@ -7,10 +7,10 @@ from tkinter import ttk
 
 from . import rich
 from . import theme as T
-from .robot import Robot
+from .bot_kit import COLOURS, Bot, ThinkingDots, mix, still
 from .widgets import RoundCard, _scale
 
-BOT_BUBBLE, USER_BUBBLE = "#F1F3F7", T.ORANGE
+BOT_BUBBLE, USER_BUBBLE, USER_CHIP = T.CANVAS, COLOURS["A"], mix(COLOURS["A"], "#FFFFFF", 0.22)
 
 
 class ChatView(tk.Frame):
@@ -19,8 +19,14 @@ class ChatView(tk.Frame):
         self.bot_name, self.k = bot_name, _scale(parent)
         self.canvas = tk.Canvas(self, bg=T.CARD, highlightthickness=0, bd=0)
         bar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.canvas.configure(yscrollcommand=bar.set)
-        bar.pack(side="right", fill="y")
+
+        def scrolled(first, last):  # the scroll bar only when there is something to scroll
+            bar.set(first, last)
+            if float(first) <= 0 and float(last) >= 1:
+                bar.pack_forget()
+            else:
+                bar.pack(side="right", fill="y", before=self.canvas)
+        self.canvas.configure(yscrollcommand=scrolled)
         self.canvas.pack(side="left", fill="both", expand=True)
         self.inner = tk.Frame(self.canvas, bg=T.CARD)
         self._win = self.canvas.create_window(0, 0, window=self.inner, anchor="nw")
@@ -59,14 +65,14 @@ class ChatView(tk.Frame):
     def add_user(self, text, files=()):
         row = tk.Frame(self.inner, bg=T.CARD)
         row.pack(fill="x", padx=12, pady=(10, 2))
-        bubble = RoundCard(row, fill=USER_BUBBLE, radius=18, pad=12, fit=True, shadow=False)
+        bubble = RoundCard(row, fill=USER_BUBBLE, radius=14, pad=11, fit=True, shadow=False)
         bubble.pack(side="right")
         for name in files:  # attached documents, shown as small cards in the bubble
-            card = tk.Frame(bubble.inner, bg="#FF9433")
+            card = tk.Frame(bubble.inner, bg=USER_CHIP)
             card.pack(anchor="e", pady=(0, 6))
-            tk.Label(card, text="\uE8A5", font=(T.ICONS, 11), bg="#FF9433", fg="white").pack(side="left", padx=(8, 4),
+            tk.Label(card, text="\uE8A5", font=(T.ICONS, 11), bg=USER_CHIP, fg="white").pack(side="left", padx=(8, 4),
                                                                                          pady=5)
-            tk.Label(card, text=name, font=T.F_SMALL_BOLD, bg="#FF9433", fg="white").pack(side="left", padx=(0, 10))
+            tk.Label(card, text=name, font=T.F_SMALL_BOLD, bg=USER_CHIP, fg="white").pack(side="left", padx=(0, 10))
         lbl = tk.Label(bubble.inner, text=text, bg=USER_BUBBLE, fg="white", font=T.F_BODY, justify="left",
                        anchor="w")
         if text:
@@ -100,22 +106,24 @@ class _UserMessage:
 
 
 class _BotMessage:
-    """One bot message: typing dots, then streamed text, then the formatted answer."""
+    """One bot message: the bot bobbing next to thinking dots, then streamed text, then the formatted answer."""
 
     def __init__(self, view):
         self.view, self.raw, self.done = view, "", False
         k = view.k
         row = tk.Frame(view.inner, bg=T.CARD)
         row.pack(fill="x", padx=12, pady=(12, 2))
-        left = tk.Frame(row, bg=T.CARD)
-        left.pack(side="left", anchor="n", padx=(0, 10))
-        self.avatar = Robot(left, size=int(38 * k), animate=False, shadow=False, bg=T.CARD)
+        self.left = tk.Frame(row, bg=T.CARD, width=int(42 * k), height=int(46 * k))
+        self.left.pack(side="left", anchor="n", padx=(0, 10))
+        self.left.pack_propagate(False)
+        self.avatar = Bot(self.left, size=int(38 * k), mode="busy", clickable=False)
         self.avatar.pack()
         col = tk.Frame(row, bg=T.CARD)
         col.pack(side="left", fill="x", expand=True, anchor="w")
         tk.Label(col, text=view.bot_name, bg=T.CARD, fg=T.MUTED, font=T.F_SMALL_BOLD, anchor="w").pack(anchor="w")
-        self.bubble = RoundCard(col, fill=BOT_BUBBLE, radius=18, pad=12, fit=True, shadow=False)
-        self.bubble.pack(anchor="w", pady=(3, 0))
+        self.thinking = ThinkingDots(col, text="Thinking...")
+        self.thinking.pack(anchor="w", pady=(2, 0))
+        self.bubble = RoundCard(col, fill=BOT_BUBBLE, radius=14, pad=11, fit=True, shadow=False)
         self.holder = tk.Frame(self.bubble.inner, bg=BOT_BUBBLE)
         self.holder.pack(anchor="w")
         self.holder.pack_propagate(False)
@@ -127,32 +135,34 @@ class _BotMessage:
             self.text.tag_configure(tag, lmargin1=0, lmargin2=0, rmargin=0)
         self.text.tag_configure("md_b1", lmargin1=2, lmargin2=18)
         self.text.tag_configure("md_b2", lmargin1=20, lmargin2=36)
-        self.text.tag_configure("status", foreground=T.MUTED, font=T.F_SMALL)
+        self.text.tag_configure("md_mark", foreground=COLOURS["A"])
         self.text.tag_configure("error", foreground=T.RED)
         self.actions = tk.Frame(col, bg=T.CARD)
         self.actions.pack(anchor="w", pady=(3, 0))
-        self.dots, self.status = 0, "Thinking"
-        self._typing_job = None
-        self.typing("Thinking")
 
-    # typing indicator: "Thinking ●●●" with the dots growing
     def typing(self, status=None):
-        if self.done or self.raw:
-            return
-        if status:
-            self.status = status.rstrip(". ")
-        self.dots = self.dots % 3 + 1
-        self._set_text([(f"{self.status} ", "status"), ("●" * self.dots + "○" * (3 - self.dots), "status")])
-        if self._typing_job is None:
-            self._typing_job = self.view.after(380, self._typing_tick)
+        """What the bot is doing, next to the thinking dots."""
+        if status and self.thinking is not None:
+            self.thinking.set_text(status.rstrip(". ") + "...")
 
-    def _typing_tick(self):
-        self._typing_job = None
-        if not self.done and not self.raw and self.text.winfo_exists():
-            self.typing()
+    def _reveal(self):
+        """The first words: the bubble replaces the thinking dots."""
+        if self.thinking is not None:
+            self.thinking.destroy()
+            self.thinking = None
+            self.bubble.pack(anchor="w", pady=(3, 0), before=self.actions)
+
+    def _rest(self):
+        """The answer is there: the bot stops moving (an avatar, a still picture)."""
+        if self.avatar is not None:
+            self.avatar.destroy()
+            self.avatar = None
+            self.face = still(int(38 * self.view.k))
+            tk.Label(self.left, image=self.face, bg=T.CARD).pack(anchor="n", pady=(int(4 * self.view.k), 0))
 
     def stream(self, piece):
         """More text from the bot, shown as it arrives (plain; formatted when finished)."""
+        self._reveal()
         self.raw += piece
         shown = re.sub(r"\*\*", "", self.raw)
         self._set_text([(shown, "md_body")])
@@ -160,6 +170,8 @@ class _BotMessage:
 
     def finish(self, markdown, on_copy=None, files=()):
         self.done = True
+        self._reveal()
+        self._rest()
         self.raw = markdown
         self.text.configure(state="normal")
         self.text.delete("1.0", "end")
@@ -169,12 +181,13 @@ class _BotMessage:
         self.relayout()
         for path in files:  # files the bot's actions created: one click to open each
             import os
-            b = tk.Label(self.actions, text=f"Open {os.path.basename(path)}", bg=T.ORANGE_TINT, fg=T.ORANGE,
+            b = tk.Label(self.actions, text=f"Open {os.path.basename(path)}", bg=mix(COLOURS["A"], "#FFFFFF", 0.88),
+                         fg=COLOURS["A"],
                          font=T.F_SMALL_BOLD, cursor="hand2", padx=10, pady=4)
             b.pack(side="left", padx=(0, 8))
             b.bind("<Button-1>", lambda e, p=path: os.path.exists(p) and os.startfile(p))
         if on_copy:
-            link = tk.Label(self.actions, text="Copy", bg=T.CARD, fg=T.ORANGE, font=T.F_SMALL_BOLD,
+            link = tk.Label(self.actions, text="Copy", bg=T.CARD, fg=COLOURS["A"], font=T.F_SMALL_BOLD,
                             cursor="hand2")
             link.pack(side="left")
             link.bind("<Button-1>", lambda e: (on_copy(markdown), link.configure(text="Copied")))
@@ -182,6 +195,8 @@ class _BotMessage:
 
     def error(self, message):
         self.done = True
+        self._reveal()
+        self._rest()
         self._set_text([(message, "error")])
 
     def _set_text(self, parts):

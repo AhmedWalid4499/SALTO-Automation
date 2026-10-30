@@ -17,7 +17,7 @@ from salto import config, errors, keystore, updater
 from salto.version import APP_NAME, __version__
 from salto.worker import BrowserWorker
 from ui import dialogs as messagebox  # SALTO Buddy-styled messages
-from ui import guide, notify
+from ui import gfx, guide, notify
 from ui.signin import SignInPrompter
 from ui import theme as T
 from ui.widgets import NavItem, Pill, RoundButton, RoundCard
@@ -63,24 +63,28 @@ class App:
         self.features, self.pages, self.nav = [], [], []
 
         self._sidebar()
-        main = tk.Frame(root, bg=T.CANVAS)
-        main.pack(side="left", fill="both", expand=True, padx=(4, 18), pady=(14, 0))
-        top = tk.Frame(main, bg=T.CANVAS)
-        top.pack(fill="x", pady=(4, 10))
-        self.page_title = tk.Label(top, text="", bg=T.CANVAS, fg=T.INK, font=T.F_PAGE, anchor="w")
-        self.page_title.pack(anchor="w")
-        self.page_sub = tk.Label(top, text="", bg=T.CANVAS, fg=T.MUTED, font=T.F_SMALL, anchor="w")
-        self.page_sub.pack(anchor="w")
+        # the content: one rounded white sheet on the dark shell
+        main = tk.Frame(root, bg=T.SHELL)
+        main.pack(side="left", fill="both", expand=True, padx=(0, 8))
         self._statusbar(main)
+        sheet = RoundCard(main, radius=14, pad=20, shadow=False)
+        sheet.pack(fill="both", expand=True, pady=(8, 0))
+        top = tk.Frame(sheet.inner, bg=T.CARD)
+        top.pack(fill="x", pady=(0, 14))
+        self.page_title = tk.Label(top, text="", bg=T.CARD, fg=T.INK, font=T.F_PAGE, anchor="w")
+        self.page_title.pack(anchor="w")
+        self.page_sub = tk.Label(top, text="", bg=T.CARD, fg=T.MUTED, font=T.F_BODY, anchor="w")
+        self.page_sub.pack(anchor="w")
         for i, cls in enumerate(FEATURES):
-            card = RoundCard(main, radius=28, pad=20)
+            page = tk.Frame(sheet.inner, bg=T.CARD)
             f = cls(self)
             if cls.__name__ == "OrderExplorer":
                 self.explorer = f
-            f.build(card.inner)
+            f.build(page)
             self.features.append(f)
-            self.pages.append(card)
+            self.pages.append(page)
         self.select(0)
+        root.after(0, lambda: gfx.window_frame(root, T.SHELL, T.SHELL_TEXT, dark=True))
 
         root.protocol("WM_DELETE_WINDOW", self.on_close)
         root.after(80, self._pump)
@@ -117,68 +121,64 @@ class App:
     # ------------------------------------------------------------ chrome
     def _sidebar(self):
         k = max(1.0, self.root.winfo_fpixels("1i") / 96)  # Windows display scaling
-        side = RoundCard(self.root, radius=28, pad=14, width=int(208 * k))
-        side.pack(side="left", fill="y", padx=(18, 14), pady=18)
-        side.pack_propagate(False)
-        box = side.inner
-        brand = tk.Frame(box, bg=T.CARD)
-        brand.pack(fill="x", padx=6, pady=(8, 22))
+        box = tk.Frame(self.root, bg=T.SHELL, width=int(228 * k))
+        box.pack(side="left", fill="y", padx=int(10 * k), pady=(int(6 * k), int(10 * k)))
+        box.pack_propagate(False)
+        brand = tk.Frame(box, bg=T.SHELL)
+        brand.pack(fill="x", padx=6, pady=(8, 20))
         px = 64 if k >= 1.4 else 48 if k > 1.15 else 40
         logo = os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))), "assets",
                             f"logo_{px}.png")
         if os.path.exists(logo):
             self._logo = tk.PhotoImage(file=logo)
-            tk.Label(brand, image=self._logo, bg=T.CARD).pack(side="left")
-        names = tk.Frame(brand, bg=T.CARD)
+            tk.Label(brand, image=self._logo, bg=T.SHELL).pack(side="left")
+        names = tk.Frame(brand, bg=T.SHELL)
         names.pack(side="left", padx=(10, 0))
-        tk.Label(names, text=APP_NAME, bg=T.CARD, fg=T.INK, font=T.F_SECTION).pack(anchor="w")
-        tk.Label(names, text="for SALTO", bg=T.CARD, fg=T.MUTED, font=T.F_SMALL).pack(anchor="w")
+        tk.Label(names, text=APP_NAME, bg=T.SHELL, fg=T.SHELL_TEXT, font=T.F_SECTION).pack(anchor="w")
+        tk.Label(names, text="for SALTO", bg=T.SHELL, fg=T.SHELL_MUTED, font=T.F_SMALL).pack(anchor="w")
 
-        tk.Label(box, text="MENU", bg=T.CARD, fg=T.SUBTLE, font=T.F_CAPS).pack(anchor="w", padx=12, pady=(0, 6))
         for i, cls in enumerate(FEATURES):
             item = NavItem(box, getattr(cls, "icon", "\uE80F"), getattr(cls, "nav_title", cls.title),
                            lambda i=i: self.select(i))
             item.pack(fill="x", pady=1)
             self.nav.append(item)
 
-        bottom = tk.Frame(box, bg=T.CARD)
+        bottom = tk.Frame(box, bg=T.SHELL)
         bottom.pack(side="bottom", fill="x")
-        tk.Label(bottom, text="SUPPORT", bg=T.CARD, fg=T.SUBTLE, font=T.F_CAPS).pack(anchor="w", padx=12,
-                                                                                  pady=(0, 6))
-        NavItem(bottom, "\uE897", "Guide", lambda: guide.show_guide(self.root)).pack(fill="x", pady=1)
+        NavItem(bottom, "\uE736", "Guide", lambda: guide.show_guide(self.root)).pack(fill="x", pady=1)
         NavItem(bottom, "\uE713", "Settings", self.show_settings).pack(fill="x", pady=1)
-        self.update_item = NavItem(bottom, "\uE896", "Check for updates",
+        self.update_item = NavItem(bottom, "\uE895", "Check for updates",
                                    lambda: self.prompt_update() if self._update else self.check_updates(False))
         self.update_item.pack(fill="x", pady=1)
         self.pill = Pill(bottom)
-        self.pill.pack(fill="x", pady=(14, 4))
-        tk.Label(bottom, text=f"Version {__version__}", bg=T.CARD, fg=T.SUBTLE, font=T.F_SMALL).pack(anchor="w",
-                                                                                                padx=12)
+        self.pill.pack(fill="x", pady=(12, 6))
+        tk.Label(bottom, text=f"Version {__version__}", bg=T.SHELL, fg=T.SHELL_MUTED, font=T.F_SMALL).pack(anchor="w",
+                                                                                                    padx=12)
 
     def select(self, index):
         """Show one feature page (sidebar click)."""
-        for i, (card, item) in enumerate(zip(self.pages, self.nav)):
+        for i, (page, item) in enumerate(zip(self.pages, self.nav)):
             item.set(selected=i == index)
             if i != index:
-                card.pack_forget()
+                page.pack_forget()
         cls = FEATURES[index]
         self.page_title.configure(text=cls.title)
         self.page_sub.configure(text=getattr(cls, "subtitle", ""))
-        self.pages[index].pack(fill="both", expand=True, pady=(0, 10))
+        self.pages[index].pack(fill="both", expand=True)
         self.current = self.features[index] if index < len(self.features) else None
 
     def _statusbar(self, parent):
-        bar = tk.Frame(parent, bg=T.CANVAS)
-        bar.pack(side="bottom", fill="x", pady=(0, 8))
-        top = tk.Frame(bar, bg=T.CANVAS)
-        top.pack(fill="x")
-        self.status = tk.Label(top, text="Ready", bg=T.CANVAS, fg=T.MUTED, font=T.F_SMALL, anchor="w")
+        bar = tk.Frame(parent, bg=T.SHELL)
+        bar.pack(side="bottom", fill="x", pady=(0, 6))
+        top = tk.Frame(bar, bg=T.SHELL)
+        top.pack(fill="x", pady=(5, 0))
+        self.status = tk.Label(top, text="Ready", bg=T.SHELL, fg=T.SHELL_MUTED, font=T.F_SMALL, anchor="w")
         self.status.pack(side="left", fill="x", expand=True, padx=4)
-        self.log_link = tk.Label(top, text="Show activity", bg=T.CANVAS, fg=T.ORANGE, font=T.F_SMALL_BOLD,
+        self.log_link = tk.Label(top, text="Show activity", bg=T.SHELL, fg=T.ORANGE, font=T.F_SMALL_BOLD,
                                  cursor="hand2")
         self.log_link.pack(side="right", padx=4)
         self.log_link.bind("<Button-1>", lambda e: self.toggle_log())
-        self.logbox = tk.Text(bar, height=7, font=T.F_LOG, bg=T.CARD, fg=T.INK, borderwidth=0,
+        self.logbox = tk.Text(bar, height=7, font=T.F_LOG, bg=T.SHELL_HOVER, fg=T.SHELL_TEXT, borderwidth=0,
                               highlightthickness=0, padx=12, pady=8, state="disabled")
 
     def toggle_log(self):
@@ -186,7 +186,7 @@ class App:
             self.logbox.pack_forget()
             self.log_link.configure(text="Show activity")
         else:
-            self.logbox.pack(fill="x", pady=(0, 6))
+            self.logbox.pack(fill="x", pady=(6, 0))
             self.logbox.see("end")
             self.log_link.configure(text="Hide activity")
 
@@ -449,7 +449,7 @@ class App:
         f.pack(fill="both", expand=True)
         ttk.Label(f, text=f"SALTO Buddy {info.version} is available", style="Title.TLabel").pack(anchor="w")
         ttk.Label(f, text=f"You have {__version__}. What's new:", style="Muted.TLabel").pack(anchor="w", pady=(2, 6))
-        notes = tk.Text(f, height=9, width=60, wrap="word", font=T.F_BODY, bg=T.FIELD, borderwidth=0,
+        notes = tk.Text(f, height=9, width=60, wrap="word", font=T.F_BODY, bg=T.FIELD, fg=T.INK, borderwidth=0,
                         highlightthickness=0, padx=12, pady=10)
         notes.insert("end", info.notes or "No release notes.")
         notes.configure(state="disabled")

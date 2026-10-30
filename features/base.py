@@ -7,7 +7,7 @@ then add it to FEATURES in features/__init__.py.
 
 class Feature:
     title = "Feature"
-    icon = "\uE80F"          # Segoe MDL2 Assets glyph shown in the sidebar
+    icon = "\uE80F"          # glyph of Windows' icon font, shown in the menu
     subtitle = ""             # one line under the page title
 
     def __init__(self, app):

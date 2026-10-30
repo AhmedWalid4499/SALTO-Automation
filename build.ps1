@@ -1,4 +1,4 @@
-﻿# Builds the SALTO Buddy installer.
+# Builds the SALTO Buddy installer.
 #
 #   .\build.ps1            -> releases\SALTO-Buddy-Setup-<version>.exe
 #
@@ -27,11 +27,14 @@ py -m PyInstaller --noconfirm --clean --windowed --name "SALTO Buddy" `
     --collect-all selenium `
     --collect-submodules anthropic `
     --hidden-import salto.assistant `
+    --hidden-import PIL.ImageTk `
+    --hidden-import PIL._tkinter_finder `
     --add-data "$PSScriptRoot\salto\extract.js;salto" `
     --add-data "$PSScriptRoot\assets\app.ico;assets" `
     --add-data "$PSScriptRoot\assets\logo_40.png;assets" `
     --add-data "$PSScriptRoot\assets\logo_48.png;assets" `
     --add-data "$PSScriptRoot\assets\logo_64.png;assets" `
+    --add-data "$PSScriptRoot\assets\bot.png;assets" `
     --add-binary "$($gecko.FullName);." `
     --distpath "$dist" --workpath "$work\tmp" --specpath "$work" app.py
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }

@@ -24,7 +24,7 @@ FILE_COLS = ["Case", "Title", "Category", "Added by", "Date", "Status"]
 
 class OrderExplorer(Feature):
     title = "Order explorer"
-    icon = "\uF246"
+    icon = "\uE7B8"  # package
     subtitle = "Open a GOLD order: stage, devices, serial numbers, people, every tab and sub-case"
 
     def build(self, parent):
@@ -34,10 +34,10 @@ class OrderExplorer(Feature):
         # ---- input bar: order + main action left, secondary actions right
         bar = ttk.Frame(parent, style="Card.TFrame")
         bar.pack(fill="x")
-        ttk.Label(bar, text="Order #", font=T.F_BOLD).pack(side="left")
         self.order = tk.StringVar()
-        e = RoundEntry(bar, textvariable=self.order, width=190)
-        e.pack(side="left", padx=(8, 6))
+        e = RoundEntry(bar, textvariable=self.order, width=260, placeholder="GOLD order, e.g. 10-1764901",
+                       icon="\uE721")
+        e.pack(side="left", padx=(0, 8))
         e.bind("<Return>", lambda _e: self.go())
         e.focus_set()
         self.open_btn = RoundButton(bar, "Open order", self.go)
@@ -53,11 +53,11 @@ class OrderExplorer(Feature):
 
         # ---- order header: title, stage bar, a few key numbers
         head = tk.Frame(parent, bg=T.CARD)
-        head.pack(fill="x", pady=(12, 0))
+        head.pack(fill="x", pady=(14, 0))
         self.title_lbl = tk.Label(head, text="", bg=T.CARD, fg=T.INK, font=T.F_TITLE, anchor="w")
         self.title_lbl.pack(fill="x")
         steps = tk.Frame(head, bg=T.CARD)
-        steps.pack(fill="x", pady=(4, 0))
+        steps.pack(fill="x", pady=(8, 0))
         self.stepper = Stepper(steps)
         self.stepper.pack(side="left")
         self.folder_lbl = tk.Label(head, text="", bg=T.CARD, fg=T.MUTED, font=T.F_SMALL, cursor="hand2", anchor="w")
@@ -69,7 +69,7 @@ class OrderExplorer(Feature):
         self.cards = {}
         for i, name in enumerate(["Status", "Current stage", "EQPs", "Scope devices", "Sub-cases", "Attachments"]):
             c = StatusCard(cards, name, variant={"Status": "dark", "Current stage": "accent"}.get(name, "plain"))
-            c.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 10, 0))
+            c.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 3, 0))
             cards.grid_columnconfigure(i, weight=1, uniform="cards")
             self.cards[name] = c
 
@@ -607,7 +607,7 @@ class OrderExplorer(Feature):
             return
         body = ttk.PanedWindow(page, orient="horizontal")
         body.pack(fill="both", expand=True, padx=10, pady=10)
-        left = tk.Frame(body, bg=T.ZEBRA, highlightthickness=1, highlightbackground=T.LINE)
+        left = tk.Frame(body, bg=T.FIELD, highlightthickness=1, highlightbackground=T.LINE)
         nav = ttk.Treeview(left, show="tree", style="Nav.Treeview", selectmode="browse")
         nav.column("#0", width=260)
         nav.pack(fill="both", expand=True, padx=4, pady=4)
